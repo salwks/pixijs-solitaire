@@ -1,4 +1,4 @@
-// PixiJS 솔리테어 - 카드 클래스
+// PixiJS 솔리테어 - 카드 클래스 (수정됨)
 
 import { CONSTANTS } from "../core/Constants.js";
 
@@ -28,6 +28,9 @@ export class Card {
     this.lastClickTime = 0;
     this.doubleClickDelay = 300;
 
+    // 호버 상태
+    this.isHovered = false;
+
     this.createSprites();
     this.setupInteraction();
   }
@@ -56,17 +59,13 @@ export class Card {
     this.container.interactive = true;
     this.container.cursor = "pointer";
 
-    // 이벤트 바인딩
+    // 이벤트 바인딩 - 수정된 부분
     this.container.on("pointerdown", this.onPointerDown.bind(this));
     this.container.on("pointermove", this.onPointerMove.bind(this));
     this.container.on("pointerup", this.onPointerUp.bind(this));
     this.container.on("pointerupoutside", this.onPointerUp.bind(this));
 
-    // 호버 이벤트 설정
-    this.setupHoverEffects();
-  }
-
-  setupHoverEffects() {
+    // 호버 이벤트 설정 - 수정된 부분
     this.container.on("pointerover", this.onHover.bind(this));
     this.container.on("pointerout", this.onHoverOut.bind(this));
   }
@@ -82,8 +81,6 @@ export class Card {
     if (this.frontSprite && this.backSprite) {
       this.frontSprite.visible = this.faceUp;
       this.backSprite.visible = !this.faceUp;
-
-      this.addFlipEffect();
     }
 
     console.log(
@@ -91,36 +88,19 @@ export class Card {
     );
   }
 
-  // 뒤집기 시각적 효과
-  addFlipEffect() {
-    this.container.tint = 0xffffaa;
-    setTimeout(() => {
-      this.container.tint = 0xffffff;
-    }, 200);
-  }
-
   // 카드 선택 하이라이트
   setSelected(selected) {
     this.isSelected = selected;
 
     if (selected) {
-      // 글로우 효과 - PixiJS v8 호환
-      try {
-        this.container.filters = [
-          new PIXI.filters.GlowFilter({
-            distance: 10,
-            outerStrength: 2,
-            color: 0xffd700,
-            quality: 0.5,
-          }),
-        ];
-      } catch (error) {
-        // 필터가 없으면 간단한 틴트 효과
-        this.container.tint = 0xffff99;
-      }
+      // 선택된 카드 강조 - 틴트 사용
+      this.container.tint = 0xffff99;
+      this.container.scale.set(CONSTANTS.CARD_SCALE * 1.05);
     } else {
-      this.container.filters = [];
       this.container.tint = 0xffffff;
+      if (!this.isHovered) {
+        this.container.scale.set(CONSTANTS.CARD_SCALE);
+      }
     }
   }
 
@@ -135,34 +115,24 @@ export class Card {
     }
   }
 
-  // 호버 효과
+  // 호버 효과 - 수정된 부분
   onHover() {
-    if (this.faceUp && this.isDraggable && !this.isDragging) {
+    if (this.faceUp && !this.isDragging && !this.isSelected) {
+      this.isHovered = true;
       this.container.scale.set(CONSTANTS.CARD_SCALE * 1.05);
-
-      // 그림자 효과 - 안전한 방식
-      try {
-        this.container.filters = [
-          new PIXI.filters.DropShadowFilter({
-            distance: 5,
-            angle: Math.PI / 4,
-            color: 0x000000,
-            alpha: 0.3,
-            blur: 2,
-          }),
-        ];
-      } catch (error) {
-        // 필터가 없으면 위치 변경만
-        this.container.y -= 3;
-      }
+      this.container.y -= 5; // 살짝 위로 이동
     }
   }
 
   onHoverOut() {
     if (!this.isDragging && !this.isSelected) {
+      this.isHovered = false;
       this.container.scale.set(CONSTANTS.CARD_SCALE);
-      this.container.filters = [];
-      // 원래 위치로 복원 (hover에서 y 변경한 경우)
+
+      // 원래 위치로 복원
+      if (this.currentStack) {
+        this.updatePosition();
+      }
     }
   }
 
@@ -176,7 +146,15 @@ export class Card {
     return { x: this.container.x, y: this.container.y };
   }
 
-  // 드래그 이벤트 핸들러들
+  // 스택 내에서의 올바른 위치로 업데이트
+  updatePosition() {
+    if (!this.currentStack) return;
+
+    const stackPos = this.currentStack.getCardPosition(this.stackIndex);
+    this.setPosition(stackPos.x, stackPos.y);
+  }
+
+  // 드래그 이벤트 핸들러들 - 수정된 부분
   onPointerDown(event) {
     // 더블클릭 확인
     const currentTime = Date.now();
@@ -189,11 +167,41 @@ export class Card {
       return;
     }
 
-    // 뒷면 카드나 드래그 불가 카드는 드래그 불가
-    if (!this.faceUp || !this.isDraggable) {
+    // Stock 카드 클릭 처리
+    if (this.currentStack?.type === "stock") {
+      this.handleStockClick();
       return;
     }
 
+    // 뒷면 카드 클릭 시 뒤집기 (Tableau 맨 위 카드만)
+    if (!this.faceUp && this.canFlip()) {
+      this.flip(true);
+      this.dispatchEvent("cardflipped", { card: this });
+      return;
+    }
+
+    // 드래그 시작
+    if (this.faceUp && this.isDraggable) {
+      this.startDrag(event);
+    }
+  }
+
+  // Stock 클릭 처리
+  handleStockClick() {
+    this.dispatchEvent("stockclicked", { card: this });
+  }
+
+  // 카드 뒤집기 가능 여부 확인
+  canFlip() {
+    if (!this.currentStack || this.currentStack.type !== "tableau") {
+      return false;
+    }
+    // Tableau의 맨 위 카드만 뒤집기 가능
+    return this.currentStack.getTopCard() === this;
+  }
+
+  // 드래그 시작
+  startDrag(event) {
     this.isDragging = true;
     this.dragStart = event.data.global.clone();
     this.originalPosition = { x: this.container.x, y: this.container.y };
@@ -211,8 +219,18 @@ export class Card {
       );
     }
 
+    // 드래그할 카드들 결정 (Tableau에서는 연속된 카드들)
+    let draggedCards = [this];
+    if (this.currentStack?.type === "tableau") {
+      draggedCards = this.currentStack.getCardsFromIndex(this.stackIndex);
+    }
+
     // 드래그 시작 이벤트 발생
-    this.dispatchEvent("dragstart", { card: this, event });
+    this.dispatchEvent("dragstart", {
+      card: this,
+      cards: draggedCards,
+      event: event,
+    });
 
     console.log(`카드 ${this.toString()} 드래그 시작`);
   }
@@ -220,13 +238,19 @@ export class Card {
   onPointerMove(event) {
     if (this.isDragging) {
       const newPosition = event.data.global;
-      this.container.x =
-        this.originalPosition.x + (newPosition.x - this.dragStart.x);
-      this.container.y =
-        this.originalPosition.y + (newPosition.y - this.dragStart.y);
+      const deltaX = newPosition.x - this.dragStart.x;
+      const deltaY = newPosition.y - this.dragStart.y;
+
+      this.container.x = this.originalPosition.x + deltaX;
+      this.container.y = this.originalPosition.y + deltaY;
 
       // 드래그 중 이벤트 발생
-      this.dispatchEvent("dragmove", { card: this, event });
+      this.dispatchEvent("dragmove", {
+        card: this,
+        event: event,
+        deltaX: deltaX,
+        deltaY: deltaY,
+      });
     }
   }
 
@@ -240,7 +264,7 @@ export class Card {
       this.container.alpha = 1.0;
 
       // 드래그 종료 이벤트 발생
-      this.dispatchEvent("dragend", { card: this, event });
+      this.dispatchEvent("dragend", { card: this, event: event });
 
       console.log(`카드 ${this.toString()} 드래그 종료`);
     }
@@ -285,56 +309,10 @@ export class Card {
     return parseInt(this.rank);
   }
 
-  // 카드 상태 정보
-  getState() {
-    return {
-      suit: this.suit,
-      rank: this.rank,
-      faceUp: this.faceUp,
-      isDragging: this.isDragging,
-      isSelected: this.isSelected,
-      isDraggable: this.isDraggable,
-      position: this.getPosition(),
-      stackInfo: {
-        currentStack: this.currentStack?.type || null,
-        stackIndex: this.stackIndex,
-      },
-    };
-  }
-
-  // 상태 복원
-  setState(state) {
-    this.faceUp = state.faceUp;
-    this.isDragging = state.isDragging;
-    this.isSelected = state.isSelected;
-    this.isDraggable = state.isDraggable;
-
-    this.setPosition(state.position.x, state.position.y);
-    this.setSelected(state.isSelected);
-    this.setDraggable(state.isDraggable);
-
-    if (this.frontSprite && this.backSprite) {
-      this.frontSprite.visible = this.faceUp;
-      this.backSprite.visible = !this.faceUp;
-    }
-  }
-
-  // 애니메이션 상태 확인
-  isAnimating() {
-    return (
-      this.container.scale.x !== CONSTANTS.CARD_SCALE ||
-      this.container.alpha !== 1.0 ||
-      this.container.rotation !== 0
-    );
-  }
-
   // 메모리 정리
   destroy() {
     // 이벤트 리스너 제거
     this.container.removeAllListeners();
-
-    // 필터 제거
-    this.container.filters = [];
 
     // 부모에서 제거
     if (this.container.parent) {

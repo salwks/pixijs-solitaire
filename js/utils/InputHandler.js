@@ -1,4 +1,4 @@
-// PixiJS 솔리테어 - 입력 처리 클래스
+// PixiJS 솔리테어 - 입력 처리 클래스 (수정됨)
 
 import { CONSTANTS } from "../core/Constants.js";
 import { Utils } from "./Utils.js";
@@ -7,23 +7,24 @@ export class InputHandler {
   constructor(app, gameBoard) {
     this.app = app;
     this.gameBoard = gameBoard;
+    this.gameController = null; // GameController 참조 추가
 
     // 드래그 상태
     this.isDragging = false;
     this.draggedCard = null;
-    this.draggedCards = []; // 여러 카드 동시 드래그 (Tableau용)
+    this.draggedCards = []; // 여러 카드 동시 드래그
     this.dragStartPosition = null;
     this.originalPositions = [];
-
-    // 더블클릭 처리
-    this.lastClickTime = 0;
-    this.lastClickedCard = null;
-    this.doubleClickDelay = 300; // ms
 
     // 유효한 드롭존들
     this.validDropZones = [];
 
     this.setupEventListeners();
+  }
+
+  // GameController 설정
+  setGameController(gameController) {
+    this.gameController = gameController;
   }
 
   setupEventListeners() {
@@ -33,82 +34,37 @@ export class InputHandler {
     this.app.stage.on("pointerup", this.onGlobalPointerUp.bind(this));
     this.app.stage.on("pointerupoutside", this.onGlobalPointerUp.bind(this));
 
+    // 카드 이벤트 리스너
+    document.addEventListener("carddragstart", this.onCardDragStart.bind(this));
+    document.addEventListener("carddragmove", this.onCardDragMove.bind(this));
+    document.addEventListener("carddragend", this.onCardDragEnd.bind(this));
+    document.addEventListener(
+      "cardstockclicked",
+      this.onStockClicked.bind(this)
+    );
+    document.addEventListener(
+      "carddoubleclick",
+      this.onCardDoubleClick.bind(this)
+    );
+    document.addEventListener("cardcardflipped", this.onCardFlipped.bind(this));
+
     console.log("입력 이벤트 리스너가 설정되었습니다.");
   }
 
-  // 카드 클릭 처리
-  onCardClick(card, event) {
-    const currentTime = Date.now();
-    const isDoubleClick =
-      currentTime - this.lastClickTime < this.doubleClickDelay &&
-      this.lastClickedCard === card;
-
-    if (isDoubleClick) {
-      this.handleDoubleClick(card);
-    } else {
-      this.handleSingleClick(card);
-    }
-
-    this.lastClickTime = currentTime;
-    this.lastClickedCard = card;
-  }
-
-  // 단일 클릭 처리
-  handleSingleClick(card) {
-    console.log(`카드 ${card.toString()} 단일 클릭`);
-
-    // Stock pile 클릭 시 카드 뽑기
-    if (card.currentStack && card.currentStack.type === "stock") {
-      this.handleStockClick();
-      return;
-    }
-
-    // 뒷면 카드 클릭 시 뒤집기 (Tableau의 마지막 카드인 경우)
-    if (!card.faceUp && this.canFlipCard(card)) {
-      card.flip(true);
-      return;
-    }
-  }
-
-  // 더블클릭 처리
-  handleDoubleClick(card) {
-    console.log(`카드 ${card.toString()} 더블클릭 - 자동 이동 시도`);
-
-    if (!card.faceUp) return;
-
-    // Foundation으로 자동 이동 시도
-    const targetFoundation = this.findValidFoundation(card);
-    if (targetFoundation) {
-      this.moveCardToStack(card, targetFoundation);
-      return;
-    }
-
-    // 다른 Tableau로 자동 이동 시도
-    const targetTableau = this.findValidTableau(card);
-    if (targetTableau) {
-      this.moveCardToStack(card, targetTableau);
-    }
-  }
-
-  // 드래그 시작
-  onCardDragStart(card, event) {
-    if (!card.faceUp) return; // 뒷면 카드는 드래그 불가
+  // 카드 드래그 시작
+  onCardDragStart(event) {
+    const { card, cards, event: pointerEvent } = event.detail;
 
     this.isDragging = true;
     this.draggedCard = card;
-    this.dragStartPosition = event.data.global.clone();
-
-    // Tableau에서 여러 카드 선택 처리
-    if (card.currentStack && card.currentStack.type === "tableau") {
-      this.draggedCards = card.currentStack.getCardsFromIndex(card.stackIndex);
-    } else {
-      this.draggedCards = [card];
-    }
+    this.draggedCards = cards || [card];
+    this.dragStartPosition = pointerEvent.data.global.clone();
 
     // 원래 위치 저장
     this.originalPositions = this.draggedCards.map((c) => ({
       card: c,
       position: { x: c.container.x, y: c.container.y },
+      stack: c.currentStack,
     }));
 
     // 드래그 중인 카드들을 최상단으로
@@ -124,16 +80,14 @@ export class InputHandler {
     // 유효한 드롭존 하이라이트
     this.highlightValidDropZones();
 
-    console.log(`카드 드래그 시작: ${this.draggedCards.length}장`);
+    console.log(`드래그 시작: ${this.draggedCards.length}장의 카드`);
   }
 
-  // 전역 포인터 이동
-  onGlobalPointerMove(event) {
-    if (!this.isDragging || !this.dragStartPosition) return;
+  // 카드 드래그 중
+  onCardDragMove(event) {
+    if (!this.isDragging) return;
 
-    const currentPosition = event.data.global;
-    const deltaX = currentPosition.x - this.dragStartPosition.x;
-    const deltaY = currentPosition.y - this.dragStartPosition.y;
+    const { deltaX, deltaY } = event.detail;
 
     // 드래그 중인 모든 카드 이동
     this.draggedCards.forEach((dragCard, index) => {
@@ -143,8 +97,8 @@ export class InputHandler {
     });
   }
 
-  // 전역 포인터 릴리즈
-  onGlobalPointerUp(event) {
+  // 카드 드래그 종료
+  onCardDragEnd(event) {
     if (!this.isDragging) return;
 
     this.isDragging = false;
@@ -153,7 +107,7 @@ export class InputHandler {
     this.clearDropZoneHighlights();
 
     // 유효한 드롭 위치 찾기
-    const dropTarget = this.findDropTarget(event.data.global);
+    const dropTarget = this.findDropTarget(event.detail.event.data.global);
 
     if (dropTarget && this.canDropCards(this.draggedCards, dropTarget)) {
       // 유효한 위치에 드롭
@@ -164,71 +118,76 @@ export class InputHandler {
     }
 
     // 드래그 상태 초기화
-    this.draggedCard = null;
-    this.draggedCards = [];
-    this.dragStartPosition = null;
-    this.originalPositions = [];
+    this.resetDragState();
 
-    console.log("카드 드래그 종료");
+    console.log("드래그 종료");
   }
 
-  // Stock pile 클릭 처리
-  handleStockClick() {
-    // TODO: GameController와 연동하여 Stock에서 Waste로 카드 이동
-    console.log("Stock pile 클릭 - 카드 뽑기");
+  // Stock 클릭 처리
+  onStockClicked(event) {
+    if (this.gameController) {
+      this.gameController.handleStockClick();
+    }
   }
 
-  // 카드 뒤집기 가능 여부 확인
-  canFlipCard(card) {
-    if (!card.currentStack || card.currentStack.type !== "tableau") {
-      return false;
+  // 카드 더블클릭 처리
+  onCardDoubleClick(event) {
+    const { card } = event.detail;
+
+    if (!card.faceUp || !this.gameController) return;
+
+    // Foundation으로 자동 이동 시도
+    const targetFoundation = this.findValidFoundation(card);
+    if (targetFoundation) {
+      this.gameController.handleCardMove(
+        card,
+        card.currentStack,
+        targetFoundation
+      );
+      return;
     }
 
-    // Tableau의 맨 위 카드이고 뒷면인 경우만 뒤집기 가능
-    const topCard = card.currentStack.getTopCard();
-    return topCard === card && !card.faceUp;
-  }
-
-  // Foundation으로 이동 가능한 곳 찾기
-  findValidFoundation(card) {
-    // TODO: GameBoard의 foundation 스택들을 확인
-    // 임시로 null 반환
-    return null;
-  }
-
-  // Tableau로 이동 가능한 곳 찾기
-  findValidTableau(card) {
-    // TODO: GameBoard의 tableau 스택들을 확인
-    // 임시로 null 반환
-    return null;
-  }
-
-  // 카드를 특정 스택으로 이동
-  moveCardToStack(card, targetStack) {
-    if (!targetStack.canAcceptCard(card)) return false;
-
-    // 현재 스택에서 제거
-    if (card.currentStack) {
-      card.currentStack.removeCard(card);
+    // 다른 Tableau로 자동 이동 시도
+    const targetTableau = this.findValidTableau(card);
+    if (targetTableau) {
+      this.gameController.handleCardMove(
+        card,
+        card.currentStack,
+        targetTableau
+      );
     }
+  }
 
-    // 타겟 스택에 추가
-    targetStack.addCard(card);
+  // 카드 뒤집기 처리
+  onCardFlipped(event) {
+    const { card } = event.detail;
 
-    console.log(`카드 ${card.toString()}가 ${targetStack.type}로 이동됨`);
-    return true;
+    if (this.gameController) {
+      // 점수 업데이트 등의 처리
+      this.gameController.onCardFlipped(card);
+    }
   }
 
   // 드롭 타겟 찾기
-  findDropTarget(position) {
-    // TODO: 모든 스택의 드롭존과 충돌 검사
-    // 임시로 null 반환
+  findDropTarget(globalPosition) {
+    if (!this.gameController) return null;
+
+    const allStacks = this.gameController.getAllStacks();
+
+    for (const stack of allStacks) {
+      if (stack.containsPoint(globalPosition)) {
+        return stack;
+      }
+    }
     return null;
   }
 
   // 카드들을 드롭할 수 있는지 확인
   canDropCards(cards, targetStack) {
-    if (cards.length === 0) return false;
+    if (cards.length === 0 || !targetStack) return false;
+
+    // 같은 스택에는 드롭할 수 없음
+    if (cards[0].currentStack === targetStack) return false;
 
     // 첫 번째 카드가 드롭 가능한지 확인
     return targetStack.canAcceptCard(cards[0]);
@@ -236,12 +195,32 @@ export class InputHandler {
 
   // 카드들을 드롭
   dropCards(targetStack) {
-    this.draggedCards.forEach((card) => {
-      if (card.currentStack) {
-        card.currentStack.removeCard(card);
+    const fromStack = this.draggedCards[0].currentStack;
+
+    if (this.gameController) {
+      // GameController를 통해 이동 처리
+      if (this.draggedCards.length === 1) {
+        this.gameController.handleCardMove(
+          this.draggedCards[0],
+          fromStack,
+          targetStack
+        );
+      } else {
+        this.gameController.handleMultiCardMove(
+          this.draggedCards,
+          fromStack,
+          targetStack
+        );
       }
-      targetStack.addCard(card);
-    });
+    } else {
+      // 직접 이동 (fallback)
+      this.draggedCards.forEach((card) => {
+        if (card.currentStack) {
+          card.currentStack.removeCard(card);
+        }
+        targetStack.addCard(card);
+      });
+    }
 
     console.log(
       `${this.draggedCards.length}장의 카드가 ${targetStack.type}에 드롭됨`
@@ -258,16 +237,105 @@ export class InputHandler {
     console.log("카드들이 원래 위치로 복귀됨");
   }
 
+  // 드래그 상태 리셋
+  resetDragState() {
+    this.draggedCard = null;
+    this.draggedCards = [];
+    this.dragStartPosition = null;
+    this.originalPositions = [];
+  }
+
+  // Foundation으로 이동 가능한 곳 찾기
+  findValidFoundation(card) {
+    if (!this.gameController) return null;
+
+    const foundationStacks = this.gameController.foundationStacks;
+
+    for (const stack of foundationStacks) {
+      if (stack.canAcceptCard(card)) {
+        return stack;
+      }
+    }
+    return null;
+  }
+
+  // Tableau로 이동 가능한 곳 찾기
+  findValidTableau(card) {
+    if (!this.gameController) return null;
+
+    const tableauStacks = this.gameController.tableauStacks;
+
+    for (const stack of tableauStacks) {
+      if (stack !== card.currentStack && stack.canAcceptCard(card)) {
+        return stack;
+      }
+    }
+    return null;
+  }
+
   // 유효한 드롭존 하이라이트
   highlightValidDropZones() {
-    // TODO: 유효한 드롭존들을 시각적으로 강조
-    console.log("유효한 드롭존 하이라이트");
+    if (!this.gameController || this.draggedCards.length === 0) return;
+
+    const firstCard = this.draggedCards[0];
+    const allStacks = this.gameController.getAllStacks();
+
+    this.validDropZones = [];
+
+    allStacks.forEach((stack) => {
+      if (stack !== firstCard.currentStack && stack.canAcceptCard(firstCard)) {
+        this.validDropZones.push(stack);
+        // 스택의 드롭존 하이라이트 활성화는 카드가 근처에 올 때 자동으로 됨
+      }
+    });
+
+    console.log(`${this.validDropZones.length}개의 유효한 드롭존 발견`);
   }
 
   // 드롭존 하이라이트 해제
   clearDropZoneHighlights() {
-    // TODO: 모든 드롭존 하이라이트 해제
-    console.log("드롭존 하이라이트 해제");
+    this.validDropZones.forEach((stack) => {
+      stack.onDropZoneLeave();
+    });
+    this.validDropZones = [];
+  }
+
+  // 전역 포인터 이동
+  onGlobalPointerMove(event) {
+    if (this.isDragging && this.dragStartPosition) {
+      const currentPosition = event.data.global;
+      const deltaX = currentPosition.x - this.dragStartPosition.x;
+      const deltaY = currentPosition.y - this.dragStartPosition.y;
+
+      // 드래그 중인 모든 카드 이동
+      this.draggedCards.forEach((dragCard, index) => {
+        const original = this.originalPositions[index];
+        dragCard.container.x = original.position.x + deltaX;
+        dragCard.container.y = original.position.y + deltaY;
+      });
+
+      // 드롭존 하이라이트 업데이트
+      this.updateDropZoneHighlights(currentPosition);
+    }
+  }
+
+  // 드롭존 하이라이트 업데이트
+  updateDropZoneHighlights(globalPosition) {
+    this.validDropZones.forEach((stack) => {
+      if (stack.containsPoint(globalPosition)) {
+        stack.onDropZoneEnter();
+      } else {
+        stack.onDropZoneLeave();
+      }
+    });
+  }
+
+  // 전역 포인터 릴리즈
+  onGlobalPointerUp(event) {
+    if (this.isDragging) {
+      // 카드의 onPointerUp이 먼저 호출되므로 여기서는 정리만
+      this.clearDropZoneHighlights();
+    }
   }
 
   // 입력 핸들러 활성화/비활성화
@@ -278,9 +346,32 @@ export class InputHandler {
 
   // 메모리 정리
   destroy() {
+    // 이벤트 리스너 제거
     this.app.stage.removeAllListeners();
-    this.isDragging = false;
-    this.draggedCard = null;
-    this.draggedCards = [];
+
+    document.removeEventListener(
+      "carddragstart",
+      this.onCardDragStart.bind(this)
+    );
+    document.removeEventListener(
+      "carddragmove",
+      this.onCardDragMove.bind(this)
+    );
+    document.removeEventListener("carddragend", this.onCardDragEnd.bind(this));
+    document.removeEventListener(
+      "cardstockclicked",
+      this.onStockClicked.bind(this)
+    );
+    document.removeEventListener(
+      "carddoubleclick",
+      this.onCardDoubleClick.bind(this)
+    );
+    document.removeEventListener(
+      "cardcardflipped",
+      this.onCardFlipped.bind(this)
+    );
+
+    this.resetDragState();
+    this.clearDropZoneHighlights();
   }
 }

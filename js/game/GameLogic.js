@@ -1,4 +1,4 @@
-// PixiJS 솔리테어 - 게임 로직
+// PixiJS 솔리테어 - 게임 로직 (수정됨)
 
 import { CONSTANTS } from "../core/Constants.js";
 import { Utils } from "../utils/Utils.js";
@@ -271,25 +271,6 @@ export class GameLogic {
     return totalCards === CONSTANTS.GAME.TOTAL_CARDS;
   }
 
-  // 게임이 해결 가능한지 확인 (복잡한 로직)
-  isGameSolvable(allStacks) {
-    // 간단한 휴리스틱: 모든 카드가 접근 가능한지 확인
-    const stockStack = allStacks.find((s) => s.type === "stock");
-    const wasteStack = allStacks.find((s) => s.type === "waste");
-    const tableauStacks = allStacks.filter((s) => s.type === "tableau");
-
-    // Tableau의 뒷면 카드 확인
-    let blockedCards = 0;
-    tableauStacks.forEach((stack) => {
-      stack.cards.forEach((card) => {
-        if (!card.faceUp) blockedCards++;
-      });
-    });
-
-    // 기본적으로 해결 가능하다고 가정 (정확한 분석은 매우 복잡)
-    return true;
-  }
-
   // 최적의 이동 제안
   suggestBestMove(allStacks) {
     const hints = this.findHints(allStacks);
@@ -324,19 +305,6 @@ export class GameLogic {
     }
 
     return hints[0];
-  }
-
-  // 카드 이동 실행
-  executeMove(moveData) {
-    const { card, fromStack, toStack, cards } = moveData;
-
-    if (cards && cards.length > 1) {
-      // 여러 카드 이동
-      return this.executeMultiCardMove(cards, fromStack, toStack);
-    } else {
-      // 단일 카드 이동
-      return this.executeSingleCardMove(card, fromStack, toStack);
-    }
   }
 
   // 단일 카드 이동 실행

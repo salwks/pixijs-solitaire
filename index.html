@@ -1,28 +1,28 @@
 <!DOCTYPE html>
 <html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PixiJS 솔리테어</title>
-    <link rel="stylesheet" href="css/styles.css">
-</head>
-<body>
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
     <div id="gameContainer">
-        <div class="loading" id="loading">게임 로딩 중...</div>
-        <div class="ui-overlay" id="gameInfo">
-            <div>점수: <span id="score">0</span></div>
-            <div>시간: <span id="timer">00:00</span></div>
-        </div>
-        <div class="controls">
-            <button class="btn new-game" id="newGameBtn">새 게임</button>
-            <button class="btn undo" id="undoBtn">되돌리기</button>
-            <button class="btn hint" id="hintBtn">힌트</button>
-        </div>
+      <div class="loading" id="loading">게임 로딩 중...</div>
+      <div class="ui-overlay" id="gameInfo">
+        <div>점수: <span id="score">0</span></div>
+        <div>시간: <span id="timer">00:00</span></div>
+      </div>
+      <div class="controls">
+        <button class="btn new-game" id="newGameBtn">새 게임</button>
+        <button class="btn undo" id="undoBtn">되돌리기</button>
+        <button class="btn hint" id="hintBtn">힌트</button>
+      </div>
     </div>
 
     <!-- PixiJS CDN -->
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.10.1/dist/pixi.min.js"></script>
-    
+
     <!-- 게임 모듈들 -->
     <script type="module" src="js/core/Constants.js"></script>
     <script type="module" src="js/core/AssetLoader.js"></script>
@@ -39,21 +39,9 @@
     <script type="module" src="js/game/GameLogic.js"></script>
     <script type="module" src="js/game/GameController.js"></script>
     <script type="module" src="js/ui/ScoreUI.js"></script>
-    <script type="module" src="js/ui/MenuUI.js"></script></script>
-    <script type="module" src="js/entities/Card.js"></script>
-    <script type="module" src="js/entities/CardStack.js"></script>
-    <script type="module" src="js/entities/Deck.js"></script>
-    <script type="module" src="js/ui/GameBoard.js"></script>
-    <script type="module" src="js/utils/InputHandler.js"></script>
-    <script type="module" src="js/utils/CardAnimation.js"></script>
-    <script type="module" src="js/utils/Utils.js"></script>
-    <script type="module" src="js/game/GameState.js"></script>
-    <script type="module" src="js/game/GameLogic.js"></script>
-    <script type="module" src="js/game/GameController.js"></script>
-    <script type="module" src="js/ui/ScoreUI.js"></script>
     <script type="module" src="js/ui/MenuUI.js"></script>
-    
+
     <!-- 메인 진입점 -->
     <script type="module" src="js/main.js"></script>
-</body>
+  </body>
 </html>

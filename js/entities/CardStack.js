@@ -1,4 +1,4 @@
-// PixiJS 솔리테어 - 카드 스택 클래스
+// PixiJS 솔리테어 - 카드 스택 클래스 (수정됨)
 
 import { CONSTANTS } from "../core/Constants.js";
 import { Utils } from "../utils/Utils.js";
@@ -9,7 +9,7 @@ export class CardStack {
     this.index = index; // foundation이나 tableau의 인덱스
     this.cards = [];
     this.container = new PIXI.Container();
-    this.dropZoneAnimation = null; // 애니메이션 참조 추가
+    this.dropZoneAnimation = null;
 
     // 스택 위치
     this.position = Utils.getStackPosition(type, index);
@@ -81,30 +81,37 @@ export class CardStack {
     return this.cards.length === 0;
   }
 
+  // 특정 인덱스의 카드 위치 계산 - 수정된 부분
+  getCardPosition(cardIndex) {
+    let x = 0;
+    let y = 0;
+
+    switch (this.type) {
+      case "stock":
+      case "waste":
+      case "foundation":
+        // 이들은 같은 위치에 겹쳐서 배치
+        x = 0;
+        y = 0;
+        break;
+
+      case "tableau":
+        // Tableau는 계단식으로 배치
+        x = 0;
+        y = cardIndex * CONSTANTS.STACK_OFFSET_Y;
+        break;
+    }
+
+    return { x, y };
+  }
+
   // 카드 위치 업데이트
   updateCardPosition(card) {
     const cardIndex = this.cards.indexOf(card);
     if (cardIndex === -1) return;
 
-    switch (this.type) {
-      case "stock":
-      case "waste":
-        // Stock과 Waste는 같은 위치에 겹쳐서 배치
-        card.setPosition(0, 0);
-        break;
-
-      case "foundation":
-        // Foundation도 같은 위치에 겹쳐서 배치
-        card.setPosition(0, 0);
-        break;
-
-      case "tableau":
-        // Tableau는 계단식으로 배치
-        const offsetY = cardIndex * CONSTANTS.STACK_OFFSET_Y;
-        card.setPosition(0, offsetY);
-        break;
-    }
-
+    const position = this.getCardPosition(cardIndex);
+    card.setPosition(position.x, position.y);
     card.stackIndex = cardIndex;
   }
 
@@ -116,15 +123,14 @@ export class CardStack {
     });
   }
 
-  // 카드가 이 스택에 올 수 있는지 확인
+  // 카드가 이 스택에 올 수 있는지 확인 - 수정된 부분
   canAcceptCard(card) {
     switch (this.type) {
       case "foundation":
-        return Utils.canPlaceOnFoundation(card, this.cards);
+        return this.canPlaceOnFoundation(card);
 
       case "tableau":
-        const topCard = this.getTopCard();
-        return Utils.canPlaceOnTableau(card, topCard);
+        return this.canPlaceOnTableau(card);
 
       case "waste":
         return false; // Waste는 직접 카드를 받을 수 없음
@@ -135,6 +141,37 @@ export class CardStack {
       default:
         return false;
     }
+  }
+
+  // Foundation 규칙 확인
+  canPlaceOnFoundation(card) {
+    if (this.isEmpty()) {
+      return card.getValue() === 1; // 빈 Foundation에는 A만
+    }
+
+    const topCard = this.getTopCard();
+    const isSameSuit = card.suit === topCard.suit;
+    const isOneMore = card.getValue() === topCard.getValue() + 1;
+
+    return isSameSuit && isOneMore;
+  }
+
+  // Tableau 규칙 확인
+  canPlaceOnTableau(card) {
+    if (this.isEmpty()) {
+      return card.getValue() === 13; // 빈 Tableau에는 King만
+    }
+
+    const topCard = this.getTopCard();
+
+    // 뒷면 카드 위에는 올 수 없음
+    if (!topCard.faceUp) return false;
+
+    // 다른 색깔이고 1 작은 값이어야 함
+    return (
+      card.isRed() !== topCard.isRed() &&
+      card.getValue() === topCard.getValue() - 1
+    );
   }
 
   // 여러 카드를 한 번에 이동 (Tableau에서 사용)
@@ -159,20 +196,63 @@ export class CardStack {
     return true;
   }
 
-  // 특정 카드부터 끝까지의 카드들 가져오기 (Tableau용)
+  // 특정 카드부터 끝까지의 카드들 가져오기 (Tableau용) - 수정된 부분
   getCardsFromIndex(startIndex) {
     if (startIndex < 0 || startIndex >= this.cards.length) {
       return [];
     }
-    return this.cards.slice(startIndex);
+
+    const cardsFromIndex = this.cards.slice(startIndex);
+
+    // 연속된 유효한 카드들만 반환 (Tableau 규칙)
+    if (this.type === "tableau") {
+      return this.getValidSequence(cardsFromIndex);
+    }
+
+    return cardsFromIndex;
+  }
+
+  // 유효한 연속 카드 시퀀스 확인
+  getValidSequence(cards) {
+    if (cards.length <= 1) return cards;
+
+    const validCards = [cards[0]];
+
+    for (let i = 1; i < cards.length; i++) {
+      const prevCard = cards[i - 1];
+      const currCard = cards[i];
+
+      // 모든 카드가 앞면이어야 함
+      if (!prevCard.faceUp || !currCard.faceUp) break;
+
+      // 색상이 번갈아가야 함
+      if (prevCard.isRed() === currCard.isRed()) break;
+
+      // 값이 연속적으로 감소해야 함
+      if (prevCard.getValue() !== currCard.getValue() + 1) break;
+
+      validCards.push(currCard);
+    }
+
+    return validCards;
+  }
+
+  // 점이 이 스택 위에 있는지 확인
+  containsPoint(globalPoint) {
+    const localPoint = this.container.toLocal(globalPoint);
+    return (
+      localPoint.x >= 0 &&
+      localPoint.x <= CONSTANTS.CARD_WIDTH * CONSTANTS.CARD_SCALE &&
+      localPoint.y >= 0 &&
+      localPoint.y <= CONSTANTS.CARD_HEIGHT * CONSTANTS.CARD_SCALE
+    );
   }
 
   // 드롭존 이벤트 핸들러
   onDropZoneEnter() {
-    // 유효한 드롭존임을 시각적으로 표시 (개선된 버전)
+    // 유효한 드롭존임을 시각적으로 표시
     this.dropZone.clear();
 
-    // 발광 효과가 있는 테두리
     this.dropZone.roundRect(
       0,
       0,
@@ -186,16 +266,6 @@ export class CardStack {
 
     // 발광 테두리 효과
     this.dropZone.stroke({ color: CONSTANTS.COLORS.VALID_DROP, width: 3 });
-
-    // 내부 하이라이트
-    this.dropZone.roundRect(
-      3,
-      3,
-      CONSTANTS.CARD_WIDTH * CONSTANTS.CARD_SCALE - 6,
-      CONSTANTS.CARD_HEIGHT * CONSTANTS.CARD_SCALE - 6,
-      4
-    );
-    this.dropZone.stroke({ color: 0xffffff, width: 1, alpha: 0.8 });
 
     // 애니메이션 효과
     this.animateDropZone();
@@ -256,7 +326,7 @@ export class CardStack {
 
   // 메모리 정리
   destroy() {
-    this.stopDropZoneAnimation(); // 애니메이션 정리 추가
+    this.stopDropZoneAnimation();
 
     this.cards.forEach((card) => card.destroy());
     this.cards = [];

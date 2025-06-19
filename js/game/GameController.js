@@ -1,4 +1,4 @@
-// PixiJS 솔리테어 - 게임 컨트롤러
+// PixiJS 솔리테어 - 게임 컨트롤러 (수정됨)
 
 import { CONSTANTS } from "../core/Constants.js";
 import { Deck } from "../entities/Deck.js";
@@ -44,6 +44,9 @@ export class GameController {
 
     // 게임 스택들 생성
     this.createGameStacks();
+
+    // InputHandler에 GameController 참조 설정
+    this.inputHandler.setGameController(this);
 
     // 통계 로드
     this.gameState.loadStats();
@@ -133,11 +136,6 @@ export class GameController {
         this.tableauStacks[columnIndex].addCard(card);
       });
     });
-
-    // 딜링 애니메이션 (선택사항)
-    if (this.cardAnimation) {
-      // TODO: 딜링 애니메이션 구현
-    }
   }
 
   // 기존 게임 정리
@@ -200,7 +198,7 @@ export class GameController {
     }
   }
 
-  // 카드 이동 처리
+  // 단일 카드 이동 처리
   handleCardMove(card, fromStack, toStack) {
     if (!this.gameState.isPlaying()) return false;
 
@@ -210,7 +208,7 @@ export class GameController {
       toStack: toStack,
     };
 
-    if (this.gameLogic.executeMove(moveData)) {
+    if (this.gameLogic.executeSingleCardMove(card, fromStack, toStack)) {
       // 성공적인 이동
       this.onSuccessfulMove(card, toStack);
       return true;
@@ -219,6 +217,35 @@ export class GameController {
       this.onFailedMove(card);
       return false;
     }
+  }
+
+  // 다중 카드 이동 처리
+  handleMultiCardMove(cards, fromStack, toStack) {
+    if (!this.gameState.isPlaying()) return false;
+
+    if (this.gameLogic.executeMultiCardMove(cards, fromStack, toStack)) {
+      // 성공적인 이동
+      this.onSuccessfulMove(cards[0], toStack);
+      return true;
+    } else {
+      // 실패한 이동
+      this.onFailedMove(cards[0]);
+      return false;
+    }
+  }
+
+  // 카드 뒤집기 처리
+  onCardFlipped(card) {
+    // 점수 업데이트
+    this.gameState.updateScore();
+
+    // 이동 기록
+    this.gameState.recordMove({
+      type: "card_flip",
+      card: card.toString(),
+    });
+
+    this.dispatchGameStateChanged();
   }
 
   // 성공적인 이동 처리
@@ -232,6 +259,11 @@ export class GameController {
         type: "card_flip",
         card: cardToFlip.toString(),
       });
+    }
+
+    // 점수 업데이트
+    if (toStack.type === "foundation") {
+      this.gameState.addToFoundation(card);
     }
 
     // 게임 완료 확인
@@ -297,6 +329,11 @@ export class GameController {
       if (bestMove.type === "draw_stock") {
         // Stock 클릭 힌트
         console.log("힌트: Stock을 클릭하여 카드를 뽑으세요.");
+        // Stock 스택 하이라이트
+        this.stockStack.onDropZoneEnter();
+        setTimeout(() => {
+          this.stockStack.onDropZoneLeave();
+        }, 2000);
       } else if (bestMove.card) {
         // 카드 이동 힌트
         this.cardAnimation.animateHint(bestMove.card);
