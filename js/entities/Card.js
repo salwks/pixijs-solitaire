@@ -49,6 +49,9 @@ export class Card {
     this.backSprite = this.createCardBack();
     this.backSprite.visible = !this.faceUp;
     this.container.addChild(this.backSprite);
+
+    // 컨테이너가 보이도록 설정
+    this.container.visible = true;
   }
 
   // 카드 앞면 생성 (PixiJS API 활용)
@@ -278,29 +281,23 @@ export class Card {
 
   // 위치 설정
   setPosition(x, y) {
-    this.container.x = x;
-    this.container.y = y;
+    if (!this.container) {
+      console.warn("카드 컨테이너가 없습니다:", this.toString());
+      return;
+    }
+
+    try {
+      this.container.x = x;
+      this.container.y = y;
+    } catch (error) {
+      console.warn("카드 위치 설정 실패:", error, this.toString());
+    }
   }
 
-  // 카드 스케일 설정
+  // 카드 스케일 설정 (고정 스케일 사용)
   setScale(scale) {
-    this.scale = scale;
-
-    // 앞면 카드 재생성 (새로운 스케일로)
-    if (this.frontSprite) {
-      this.container.removeChild(this.frontSprite);
-      this.frontSprite = this.createCardFront();
-      this.frontSprite.visible = this.faceUp;
-      this.container.addChild(this.frontSprite);
-    }
-
-    // 뒷면 카드 재생성 (새로운 스케일로)
-    if (this.backSprite) {
-      this.container.removeChild(this.backSprite);
-      this.backSprite = this.createCardBack();
-      this.backSprite.visible = !this.faceUp;
-      this.container.addChild(this.backSprite);
-    }
+    // 고정 스케일 사용 - 리사이즈 시 스케일 변경하지 않음
+    console.log(`[Card setScale] 스케일 변경 요청 무시: ${scale}`);
   }
 
   getPosition() {
@@ -328,12 +325,6 @@ export class Card {
       return;
     }
 
-    // Stock 카드 클릭 처리
-    if (this.currentStack?.type === "stock") {
-      this.handleStockClick();
-      return;
-    }
-
     // 뒷면 카드 클릭 시 뒤집기 (Tableau 맨 위 카드만)
     if (!this.faceUp && this.canFlip()) {
       this.flip(true);
@@ -345,20 +336,6 @@ export class Card {
     if (this.faceUp && this.isDraggable) {
       this.startDrag(event);
     }
-  }
-
-  // Stock 클릭 처리
-  handleStockClick() {
-    this.dispatchEvent("stockclicked", { card: this });
-  }
-
-  // 카드 뒤집기 가능 여부 확인
-  canFlip() {
-    if (!this.currentStack || this.currentStack.type !== "tableau") {
-      return false;
-    }
-    // Tableau의 맨 위 카드만 뒤집기 가능
-    return this.currentStack.getTopCard() === this;
   }
 
   // 드래그 시작
@@ -510,7 +487,6 @@ export class Card {
   onPointerMove(event) {
     if (this.isDragging && this.dragProxies && this.dragProxies.length > 0) {
       const mousePos = event.data.global;
-
       // 모든 프록시를 함께 이동
       this.dragProxies.forEach((proxy, index) => {
         proxy.x = mousePos.x - this.dragOffset.x;
@@ -519,17 +495,6 @@ export class Card {
           this.dragOffset.y +
           index * CONSTANTS.STACK_OFFSET_Y * this.scale;
       });
-
-      console.log(
-        `[onPointerMove] ${this.dragProxies.length}개 프록시 이동:`,
-        this.dragProxies[0].x,
-        this.dragProxies[0].y,
-        "마우스:",
-        mousePos,
-        "오프셋:",
-        this.dragOffset
-      );
-
       this.dispatchEvent("dragmove", {
         card: this,
         event: event,
@@ -539,40 +504,65 @@ export class Card {
     }
   }
 
-  // 드래그 종료
+  // 마우스 업 이벤트 핸들러
   onPointerUp(event) {
-    if (this.isDragging) {
-      console.log(`[onPointerUp] 드래그 종료`);
-      this.isDragging = false;
+    if (!this.isDragging) return;
 
-      // 모든 프록시 제거
-      if (this.dragProxies) {
-        this.dragProxies.forEach((proxy) => {
-          if (proxy.parent) {
-            proxy.parent.removeChild(proxy);
-          }
-          proxy.destroy({ children: true });
-        });
-        this.dragProxies = [];
-      }
+    console.log(`[onPointerUp] 드래그 종료`);
 
-      // 모든 원본 카드 다시 보이기
-      if (this.currentStack?.type === "tableau") {
-        const draggedCards = this.currentStack.getCardsFromIndex(
-          this.stackIndex
-        );
-        draggedCards.forEach((card) => {
-          card.container.visible = true;
-        });
-      } else {
-        this.container.visible = true;
-      }
+    // 드래그 종료 처리
+    this.isDragging = false;
+    this.lastMousePos = null;
 
-      this.container.cursor = "grab";
-      this.container.alpha = 1.0;
-      this.dispatchEvent("dragend", { card: this, event: event });
-      console.log(`카드 ${this.toString()} 드래그 종료`);
+    // 드롭 가능한 스택 찾기
+    const dropStack = this.findDropStack(event.data.global);
+
+    if (dropStack && this.canDropOnStack(dropStack)) {
+      // 성공적인 드롭
+      console.log(`[onPointerUp] 성공적인 드롭: ${dropStack.type} 스택`);
+
+      // 드롭 애니메이션
+      this.animateDrop(dropStack);
+    } else {
+      // 실패한 드롭 - 원래 위치로 돌아가기
+      console.log(`[onPointerUp] 드롭 실패 - 원래 위치로 복귀`);
+
+      // 원래 위치로 돌아가기
+      this.animateReturn();
     }
+
+    // 드래그 종료 이벤트 발생
+    this.dispatchEvent("dragend", {
+      card: this,
+      event: event,
+      dropStack: dropStack,
+    });
+  }
+
+  // 드롭 애니메이션 (즉시 이동)
+  animateDrop(targetStack) {
+    if (!this.dragProxies || this.dragProxies.length === 0) return;
+    const targetPos = targetStack.getCardPosition(targetStack.getCardCount());
+    const globalTargetPos = targetStack.container.parent.toGlobal(
+      new PIXI.Point(targetPos.x, targetPos.y)
+    );
+    this.dragProxies.forEach((proxy, index) => {
+      proxy.x = globalTargetPos.x;
+      proxy.y =
+        globalTargetPos.y + index * CONSTANTS.STACK_OFFSET_Y * this.scale;
+    });
+    this.completeDrop(targetStack);
+  }
+
+  // 원래 위치로 복귀 (즉시 이동)
+  animateReturn() {
+    if (!this.dragProxies || this.dragProxies.length === 0) return;
+    this.dragProxies.forEach((proxy, index) => {
+      proxy.x = this.originalPosition.x;
+      proxy.y =
+        this.originalPosition.y + index * CONSTANTS.STACK_OFFSET_Y * this.scale;
+    });
+    this.cleanupDragProxies();
   }
 
   // 더블클릭 처리
@@ -619,11 +609,6 @@ export class Card {
     // 이벤트 리스너 제거
     this.container.removeAllListeners();
 
-    // 부모에서 제거
-    if (this.container.parent) {
-      this.container.parent.removeChild(this.container);
-    }
-
     // 컨테이너 파괴
     this.container.destroy({ children: true });
 
@@ -631,5 +616,95 @@ export class Card {
     this.frontSprite = null;
     this.backSprite = null;
     this.currentStack = null;
+  }
+
+  // 드롭 가능한 스택 찾기
+  findDropStack(globalPoint) {
+    // 모든 스택들 확인
+    const allStacks = [
+      ...(this.currentStack?.gameController?.foundationStacks || []),
+      ...(this.currentStack?.gameController?.tableauStacks || []),
+    ];
+
+    for (const stack of allStacks) {
+      if (stack.containsPoint(globalPoint)) {
+        return stack;
+      }
+    }
+    return null;
+  }
+
+  // 스택에 드롭 가능한지 확인
+  canDropOnStack(targetStack) {
+    if (!targetStack || !this.currentStack) return false;
+
+    // 같은 스택에는 드롭 불가
+    if (targetStack === this.currentStack) return false;
+
+    // 드롭할 카드들 결정
+    let draggedCards = [this];
+    if (this.currentStack.type === "tableau") {
+      draggedCards = this.currentStack.getCardsFromIndex(this.stackIndex);
+    }
+
+    // 첫 번째 카드가 대상 스택에 올 수 있는지 확인
+    return targetStack.canAcceptCard(draggedCards[0]);
+  }
+
+  // 드롭 완료 처리
+  completeDrop(targetStack) {
+    if (!this.currentStack) return;
+
+    // 드롭할 카드들 결정
+    let draggedCards = [this];
+    if (this.currentStack.type === "tableau") {
+      draggedCards = this.currentStack.getCardsFromIndex(this.stackIndex);
+    }
+
+    // 실제 카드 이동
+    this.currentStack.gameController.handleMultiCardMove(
+      draggedCards,
+      this.currentStack,
+      targetStack
+    );
+
+    // 프록시 정리
+    this.cleanupDragProxies();
+  }
+
+  // 드래그 프록시 정리
+  cleanupDragProxies() {
+    if (this.dragProxies) {
+      this.dragProxies.forEach((proxy) => {
+        if (proxy.parent) {
+          proxy.parent.removeChild(proxy);
+        }
+        proxy.destroy({ children: true });
+      });
+      this.dragProxies = [];
+    }
+
+    // 모든 원본 카드 다시 보이기
+    if (this.currentStack?.type === "tableau") {
+      const draggedCards = this.currentStack.getCardsFromIndex(this.stackIndex);
+      draggedCards.forEach((card) => {
+        card.container.visible = true;
+      });
+    } else {
+      this.container.visible = true;
+    }
+
+    // 물리 효과 정리
+    this.physics = null;
+    this.physicsAnimationId = null;
+  }
+
+  // 카드 뒤집기 가능 여부 확인
+  canFlip() {
+    if (!this.currentStack || this.currentStack.type !== "tableau") {
+      return false;
+    }
+    // Tableau의 맨 위 카드만 뒤집기 가능
+    return this.currentStack.getTopCard() === this;
   }
 }

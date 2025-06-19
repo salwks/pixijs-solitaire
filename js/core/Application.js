@@ -43,6 +43,9 @@ export class GameApplication {
       gameContainer.appendChild(this.app.canvas);
       this.app.canvas.id = "gameCanvas";
 
+      // 전역에서 접근 가능하도록 설정
+      window.PIXI_APP = this.app;
+
       // 로딩 텍스트 업데이트
       document.getElementById("loading").textContent = "에셋 로딩 중...";
 
@@ -111,28 +114,47 @@ export class GameApplication {
   }
 
   setupResizeHandler() {
+    let resizeTimeout;
+    let isResizing = false;
+
     // 화면 크기 변경 시 게임보드와 카드 크기 조정
     window.addEventListener("resize", () => {
       if (this.gameBoard && this.gameController) {
-        const newWidth = window.innerWidth;
-        const newHeight = window.innerHeight;
+        // 리사이즈 시작 시 게임 일시정지
+        if (!isResizing) {
+          isResizing = true;
 
-        // 게임보드 resize
-        this.gameBoard.resize(newWidth, newHeight);
-
-        // 토스트 UI resize
-        if (this.toastUI) {
-          this.toastUI.resize(newWidth, newHeight);
+          // 게임이 진행 중이면 일시정지
+          if (this.gameController.gameState.isPlaying()) {
+            this.gameController.gameState.isPaused = true;
+            console.log("리사이즈 중: 게임 일시정지");
+          }
         }
 
-        // 카드 스케일 재계산
-        const globalScale = Math.min(newWidth / 1024, newHeight / 720);
-        this.gameController.updateStacksScale(globalScale);
+        // 기존 타이머 클리어
+        clearTimeout(resizeTimeout);
 
-        // 모든 카드 위치 업데이트
-        this.gameController.getAllStacks().forEach((stack) => {
-          stack.updateAllCardPositions();
-        });
+        // 리사이즈 완료 후 실행할 작업
+        resizeTimeout = setTimeout(() => {
+          isResizing = false;
+
+          const newWidth = window.innerWidth;
+          const newHeight = window.innerHeight;
+
+          // 게임보드 resize
+          this.gameBoard.resize(newWidth, newHeight);
+
+          // 토스트 UI resize
+          if (this.toastUI) {
+            this.toastUI.resize(newWidth, newHeight);
+          }
+
+          // 게임 재개
+          if (this.gameController.gameState.isPaused) {
+            this.gameController.gameState.isPaused = false;
+            console.log("리사이즈 완료: 게임 재개");
+          }
+        }, 300); // 300ms 후 리사이즈 완료로 간주
       }
     });
   }

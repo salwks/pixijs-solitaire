@@ -4,10 +4,11 @@ import { CONSTANTS } from "../core/Constants.js";
 import { Utils } from "../utils/Utils.js";
 
 export class CardStack {
-  constructor(type, index = 0, scale = 1) {
+  constructor(type, index = 0, scale = 1, gameController = null) {
     this.type = type; // 'stock', 'waste', 'foundation', 'tableau'
     this.index = index; // foundation이나 tableau의 인덱스
     this.scale = scale;
+    this.gameController = gameController;
     this.cards = [];
     this.container = new PIXI.Container();
     this.dropZoneAnimation = null;
@@ -19,6 +20,18 @@ export class CardStack {
 
     // 드롭존 설정
     this.setupDropZone();
+
+    // Stock 타입일 때 카드가 없어도 클릭 가능하도록 추가 이벤트 리스너
+    if (this.type === "stock") {
+      this.container.interactive = true;
+      this.container.cursor = "pointer";
+      this.container.on("pointerdown", (event) => {
+        // Stock 클릭 시 GameController의 handleStockClick 호출
+        if (this.gameController) {
+          this.gameController.handleStockClick();
+        }
+      });
+    }
   }
 
   setupDropZone() {
@@ -48,12 +61,32 @@ export class CardStack {
 
   // 카드 추가
   addCard(card) {
+    if (!card || !card.container) {
+      console.warn("유효하지 않은 카드입니다:", card);
+      return;
+    }
+
     this.cards.push(card);
-    this.container.addChild(card.container);
+
+    // 컨테이너가 유효한지 확인
+    if (this.container && card.container) {
+      this.container.addChild(card.container);
+
+      // 카드가 보이도록 설정
+      card.container.visible = true;
+      if (card.frontSprite) card.frontSprite.visible = card.faceUp;
+      if (card.backSprite) card.backSprite.visible = !card.faceUp;
+    }
+
     card.currentStack = this;
     card.stackIndex = this.cards.length - 1;
 
-    this.updateCardPosition(card);
+    // 카드 위치 업데이트 (안전하게)
+    try {
+      this.updateCardPosition(card);
+    } catch (error) {
+      console.warn("카드 위치 업데이트 실패:", error);
+    }
 
     // 카드 드래그 가능 상태 설정
     this.updateCardDraggable(card);
@@ -165,18 +198,28 @@ export class CardStack {
   // 카드 위치 업데이트
   updateCardPosition(card) {
     const cardIndex = this.cards.indexOf(card);
-    if (cardIndex === -1) return;
+    if (cardIndex === -1 || !card || !card.container) return;
 
-    const position = this.getCardPosition(cardIndex);
-    card.setPosition(position.x, position.y);
-    card.stackIndex = cardIndex;
+    try {
+      const position = this.getCardPosition(cardIndex);
+      card.setPosition(position.x, position.y);
+      card.stackIndex = cardIndex;
+    } catch (error) {
+      console.warn(`카드 ${card.toString()} 위치 설정 실패:`, error);
+    }
   }
 
   // 모든 카드 위치 업데이트
   updateAllCardPositions() {
     this.cards.forEach((card, index) => {
-      card.stackIndex = index;
-      this.updateCardPosition(card);
+      if (card && card.container) {
+        try {
+          card.stackIndex = index;
+          this.updateCardPosition(card);
+        } catch (error) {
+          console.warn(`카드 ${card.toString()} 위치 업데이트 실패:`, error);
+        }
+      }
     });
   }
 
@@ -450,41 +493,9 @@ export class CardStack {
     this.dropZone.fill({ color: 0x000000, alpha: 0 });
   }
 
-  // 스케일 설정
+  // 스케일 설정 (고정 스케일 사용)
   setScale(scale) {
-    this.scale = scale;
-
-    // 스택 위치 업데이트
-    this.position = Utils.getStackPosition(this.type, this.index, this.scale);
-    this.container.x = this.position.x;
-    this.container.y = this.position.y;
-
-    // 드롭존 크기 업데이트
-    this.dropZone.clear();
-
-    const cardWidth = CONSTANTS.CARD_WIDTH * CONSTANTS.CARD_SCALE * this.scale;
-    const cardHeight =
-      CONSTANTS.CARD_HEIGHT * CONSTANTS.CARD_SCALE * this.scale;
-
-    // Tableau의 경우 카드 그룹의 전체 길이로 드롭존 크기 설정
-    if (this.type === "tableau" && this.cards.length > 0) {
-      const totalHeight =
-        cardHeight +
-        (this.cards.length - 1) * CONSTANTS.STACK_OFFSET_Y * this.scale;
-
-      this.dropZone.rect(0, 0, cardWidth, totalHeight);
-    } else {
-      this.dropZone.rect(0, 0, cardWidth, cardHeight);
-    }
-
-    this.dropZone.fill({ color: 0x000000, alpha: 0 });
-
-    // 모든 카드 스케일 업데이트
-    this.cards.forEach((card) => {
-      card.setScale(this.scale);
-    });
-
-    // 카드 위치 업데이트
-    this.updateAllCardPositions();
+    // 고정 스케일 사용 - 리사이즈 시 스케일 변경하지 않음
+    console.log(`[setScale] 스케일 변경 요청 무시: ${scale}`);
   }
 }

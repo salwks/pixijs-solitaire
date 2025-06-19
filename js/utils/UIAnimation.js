@@ -127,47 +127,6 @@ export class UIAnimation {
     }
   }
 
-  // 게임 시작 애니메이션
-  animateGameStart() {
-    return new Promise((resolve) => {
-      const overlay = document.createElement("div");
-      overlay.style.cssText = `
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: radial-gradient(circle, rgba(26, 107, 84, 0.9) 0%, rgba(15, 76, 58, 0.95) 100%);
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                z-index: 500;
-                color: white;
-                font-size: 48px;
-                font-weight: bold;
-                text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.8);
-            `;
-      overlay.textContent = "게임 시작!";
-      document.body.appendChild(overlay);
-
-      // 페이드 아웃 애니메이션
-      let opacity = 1;
-      const fadeOut = () => {
-        opacity -= 0.05;
-        overlay.style.opacity = opacity;
-
-        if (opacity > 0) {
-          setTimeout(fadeOut, 50);
-        } else {
-          document.body.removeChild(overlay);
-          resolve();
-        }
-      };
-
-      setTimeout(fadeOut, 1000);
-    });
-  }
-
   // 점수 상승 애니메이션
   animateScoreIncrease(scoreElement, oldScore, newScore) {
     return new Promise((resolve) => {
@@ -198,23 +157,15 @@ export class UIAnimation {
         const progress = elapsed / duration;
 
         if (progress < 1) {
-          // 숫자 카운트 업
-          const currentScore = Math.floor(oldScore + scoreDiff * progress);
-          scoreElement.textContent = currentScore.toLocaleString();
-
-          // 팝업 애니메이션
+          // 위로 올라가면서 페이드 아웃
           scorePopup.style.top = `${-20 - progress * 30}px`;
           scorePopup.style.opacity = 1 - progress;
-
-          // 점수 요소 펄스
-          const pulse = 1 + Math.sin(progress * Math.PI * 4) * 0.1;
-          scoreElement.style.transform = `scale(${pulse})`;
-
-          requestAnimationFrame(animate);
+          this.app.ticker.addOnce(animate);
         } else {
-          scoreElement.textContent = newScore.toLocaleString();
-          scoreElement.style.transform = "scale(1)";
-          scorePopup.remove();
+          // 애니메이션 완료
+          if (scorePopup.parentElement) {
+            scorePopup.parentElement.removeChild(scorePopup);
+          }
           resolve();
         }
       };
@@ -223,215 +174,67 @@ export class UIAnimation {
     });
   }
 
-  // 버튼 클릭 애니메이션
-  animateButtonClick(button) {
-    const originalTransform = button.style.transform;
-
-    button.style.transform = "scale(0.95)";
-    button.style.transition = "transform 0.1s ease";
-
-    setTimeout(() => {
-      button.style.transform = originalTransform;
-      setTimeout(() => {
-        button.style.transition = "";
-      }, 100);
-    }, 100);
-  }
-
-  // 알림 메시지 애니메이션
-  showNotification(message, type = "info", duration = 3000) {
-    const notification = document.createElement("div");
-    notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 12px 20px;
-            border-radius: 8px;
-            color: white;
-            font-weight: bold;
-            font-size: 14px;
-            z-index: 1000;
-            transform: translateX(100%);
-            transition: transform 0.3s ease;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        `;
-
-    // 타입별 색상 설정
-    switch (type) {
-      case "success":
-        notification.style.background =
-          "linear-gradient(135deg, #27ae60, #2ecc71)";
-        break;
-      case "warning":
-        notification.style.background =
-          "linear-gradient(135deg, #f39c12, #e67e22)";
-        break;
-      case "error":
-        notification.style.background =
-          "linear-gradient(135deg, #e74c3c, #c0392b)";
-        break;
-      default:
-        notification.style.background =
-          "linear-gradient(135deg, #3498db, #2980b9)";
-    }
-
-    notification.textContent = message;
-    document.body.appendChild(notification);
-
-    // 슬라이드 인 애니메이션
-    setTimeout(() => {
-      notification.style.transform = "translateX(0)";
-    }, 100);
-
-    // 자동 제거
-    setTimeout(() => {
-      notification.style.transform = "translateX(100%)";
-      setTimeout(() => {
-        document.body.removeChild(notification);
-      }, 300);
-    }, duration);
-  }
-
-  // 로딩 스피너 애니메이션
-  showLoadingSpinner(message = "로딩 중...") {
-    const overlay = document.createElement("div");
-    overlay.id = "loadingSpinner";
-    overlay.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.7);
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-            color: white;
-        `;
-
-    overlay.innerHTML = `
-            <div style="
-                width: 40px;
-                height: 40px;
-                border: 3px solid rgba(255, 255, 255, 0.3);
-                border-top-color: white;
-                border-radius: 50%;
-                animation: spin 1s linear infinite;
-                margin-bottom: 20px;
-            "></div>
-            <div style="font-size: 18px; font-weight: bold;">${message}</div>
-        `;
-
-    document.body.appendChild(overlay);
-    return overlay;
-  }
-
-  hideLoadingSpinner() {
-    const spinner = document.getElementById("loadingSpinner");
-    if (spinner) {
-      document.body.removeChild(spinner);
-    }
-  }
-
-  // HSL을 HEX로 변환
+  // HSL을 Hex로 변환
   hslToHex(h, s, l) {
+    const hue = h * 360;
+    const saturation = s * 100;
+    const lightness = l * 100;
+
     const c = (1 - Math.abs(2 * l - 1)) * s;
-    const x = c * (1 - Math.abs(((h * 6) % 2) - 1));
+    const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
     const m = l - c / 2;
 
     let r, g, b;
-
-    if (h < 1 / 6) {
-      r = c;
-      g = x;
-      b = 0;
-    } else if (h < 2 / 6) {
-      r = x;
-      g = c;
-      b = 0;
-    } else if (h < 3 / 6) {
-      r = 0;
-      g = c;
-      b = x;
-    } else if (h < 4 / 6) {
-      r = 0;
-      g = x;
-      b = c;
-    } else if (h < 5 / 6) {
-      r = x;
-      g = 0;
-      b = c;
+    if (hue < 60) {
+      [r, g, b] = [c, x, 0];
+    } else if (hue < 120) {
+      [r, g, b] = [x, c, 0];
+    } else if (hue < 180) {
+      [r, g, b] = [0, c, x];
+    } else if (hue < 240) {
+      [r, g, b] = [0, x, c];
+    } else if (hue < 300) {
+      [r, g, b] = [x, 0, c];
     } else {
-      r = c;
-      g = 0;
-      b = x;
+      [r, g, b] = [c, 0, x];
     }
 
-    r = Math.round((r + m) * 255);
-    g = Math.round((g + m) * 255);
-    b = Math.round((b + m) * 255);
+    const toHex = (n) => {
+      const hex = Math.round((n + m) * 255).toString(16);
+      return hex.length === 1 ? "0" + hex : hex;
+    };
 
-    return (r << 16) | (g << 8) | b;
+    return parseInt(toHex(r) + toHex(g) + toHex(b), 16);
   }
 
   // 랜덤 색상 생성
   getRandomColor() {
     const colors = [
-      0xff6b6b, 0x4ecdc4, 0x45b7d1, 0xf9ca24, 0xf0932b, 0xeb4d4b, 0x6c5ce7,
-      0xa29bfe,
+      0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff, 0xff8800,
+      0x8800ff, 0x00ff88, 0xff0088, 0x88ff00, 0x0088ff,
     ];
     return colors[Math.floor(Math.random() * colors.length)];
   }
 
-  // 페이드 인/아웃 효과
-  fadeElement(element, fadeIn = true, duration = 300) {
-    return new Promise((resolve) => {
-      const startOpacity = fadeIn ? 0 : 1;
-      const endOpacity = fadeIn ? 1 : 0;
-      const startTime = Date.now();
-
-      element.style.opacity = startOpacity;
-
-      const animate = () => {
-        const elapsed = Date.now() - startTime;
-        const progress = Math.min(elapsed / duration, 1);
-
-        element.style.opacity = Utils.lerp(startOpacity, endOpacity, progress);
-
-        if (progress < 1) {
-          requestAnimationFrame(animate);
-        } else {
-          element.style.opacity = endOpacity;
-          resolve();
-        }
-      };
-
-      animate();
-    });
-  }
-
-  // 모든 UI 애니메이션 중지
+  // 모든 애니메이션 중지
   stopAllAnimations() {
+    this.activeAnimations.forEach((animation) => {
+      if (animation.cards) {
+        animation.cards.forEach((card) => {
+          if (card.container) {
+            card.container.scale.set(CONSTANTS.CARD_SCALE);
+            card.container.tint = 0xffffff;
+            card.container.rotation = 0;
+          }
+        });
+      }
+    });
     this.activeAnimations.clear();
-
-    // 모든 알림 제거
-    document
-      .querySelectorAll('[style*="position: fixed"]')
-      .forEach((element) => {
-        if (element.id !== "gameContainer" && element.id !== "pauseOverlay") {
-          element.remove();
-        }
-      });
-
-    console.log("모든 UI 애니메이션이 중지되었습니다.");
   }
 
-  // 메모리 정리
+  // 리소스 정리
   destroy() {
     this.stopAllAnimations();
-    this.hideLoadingSpinner();
-    console.log("UI 애니메이션 시스템이 정리되었습니다.");
+    this.activeAnimations.clear();
   }
 }

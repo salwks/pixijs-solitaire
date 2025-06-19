@@ -342,4 +342,119 @@ export class GameState {
     console.log("진행률:", (this.getProgress() * 100).toFixed(1) + "%");
     console.log("================");
   }
+
+  // 게임 상태 저장
+  saveGameState() {
+    if (!this.isGameStarted || this.isGameCompleted) return null;
+
+    const gameState = {
+      // 기본 게임 정보
+      isGameStarted: this.isGameStarted,
+      isGameCompleted: this.isGameCompleted,
+      isPaused: this.isPaused,
+
+      // 시간 정보
+      startTime: this.startTime,
+      currentTime: this.currentTime,
+      pausedTime: this.pausedTime,
+      pauseStartTime: this.pauseStartTime,
+
+      // 게임 진행 정보
+      score: this.score,
+      moves: this.moves,
+      foundationCards: this.foundationCards,
+
+      // 이동 기록
+      moveHistory: [...this.moveHistory],
+
+      // 설정
+      settings: { ...this.settings },
+
+      // 저장 시간
+      savedAt: Date.now(),
+    };
+
+    try {
+      localStorage.setItem("solitaire_game_state", JSON.stringify(gameState));
+      console.log("게임 상태가 저장되었습니다.");
+      return gameState;
+    } catch (error) {
+      console.error("게임 상태 저장 실패:", error);
+      return null;
+    }
+  }
+
+  // 게임 상태 복원
+  loadGameState() {
+    try {
+      const savedState = localStorage.getItem("solitaire_game_state");
+      if (!savedState) return false;
+
+      const gameState = JSON.parse(savedState);
+
+      // 저장된 상태가 너무 오래된 경우 (24시간) 무시
+      const now = Date.now();
+      const savedAt = gameState.savedAt || 0;
+      if (now - savedAt > 24 * 60 * 60 * 1000) {
+        localStorage.removeItem("solitaire_game_state");
+        return false;
+      }
+
+      // 상태 복원
+      this.isGameStarted = gameState.isGameStarted;
+      this.isGameCompleted = gameState.isGameCompleted;
+      this.isPaused = gameState.isPaused;
+
+      this.startTime = gameState.startTime;
+      this.currentTime = gameState.currentTime;
+      this.pausedTime = gameState.pausedTime;
+      this.pauseStartTime = gameState.pauseStartTime;
+
+      this.score = gameState.score;
+      this.moves = gameState.moves;
+      this.foundationCards = gameState.foundationCards;
+
+      this.moveHistory = gameState.moveHistory || [];
+      this.settings = { ...this.settings, ...gameState.settings };
+
+      console.log("게임 상태가 복원되었습니다.");
+      this.updateUI();
+      return true;
+    } catch (error) {
+      console.error("게임 상태 복원 실패:", error);
+      localStorage.removeItem("solitaire_game_state");
+      return false;
+    }
+  }
+
+  // 저장된 게임 상태 삭제
+  clearSavedGameState() {
+    try {
+      localStorage.removeItem("solitaire_game_state");
+      console.log("저장된 게임 상태가 삭제되었습니다.");
+    } catch (error) {
+      console.error("게임 상태 삭제 실패:", error);
+    }
+  }
+
+  // 저장된 게임이 있는지 확인
+  hasSavedGame() {
+    try {
+      const savedState = localStorage.getItem("solitaire_game_state");
+      if (!savedState) return false;
+
+      const gameState = JSON.parse(savedState);
+      const now = Date.now();
+      const savedAt = gameState.savedAt || 0;
+
+      // 24시간 이내의 저장된 게임만 유효
+      return (
+        now - savedAt <= 24 * 60 * 60 * 1000 &&
+        gameState.isGameStarted &&
+        !gameState.isGameCompleted
+      );
+    } catch (error) {
+      return false;
+    }
+  }
 }

@@ -70,19 +70,21 @@ export class GameController {
     const globalScale = Math.min(screenWidth / 1024, screenHeight / 720);
 
     // Stock & Waste 스택
-    this.stockStack = new CardStack("stock", 0, globalScale);
-    this.wasteStack = new CardStack("waste", 0, globalScale);
+    this.stockStack = new CardStack("stock", 0, globalScale, this);
+    this.wasteStack = new CardStack("waste", 0, globalScale, this);
 
     // Foundation 스택들 (4개)
     this.foundationStacks = [];
     for (let i = 0; i < CONSTANTS.GAME.FOUNDATION_PILES; i++) {
-      this.foundationStacks.push(new CardStack("foundation", i, globalScale));
+      this.foundationStacks.push(
+        new CardStack("foundation", i, globalScale, this)
+      );
     }
 
     // Tableau 스택들 (7개)
     this.tableauStacks = [];
     for (let i = 0; i < CONSTANTS.GAME.TABLEAU_COLUMNS; i++) {
-      this.tableauStacks.push(new CardStack("tableau", i, globalScale));
+      this.tableauStacks.push(new CardStack("tableau", i, globalScale, this));
     }
 
     // 게임보드에 스택들 추가
@@ -104,6 +106,10 @@ export class GameController {
 
     // 기존 게임 정리
     this.clearGame();
+
+    // 저장된 게임 상태 삭제
+    this.gameState.clearSavedGameState();
+    this.clearSavedCardState();
 
     // 게임 상태 초기화
     this.gameState.reset();
@@ -174,18 +180,10 @@ export class GameController {
     ];
   }
 
-  // 모든 스택들의 스케일 업데이트
+  // 모든 스택들의 스케일 업데이트 (고정 스케일 사용)
   updateStacksScale(scale) {
-    if (this.stockStack) this.stockStack.setScale(scale);
-    if (this.wasteStack) this.wasteStack.setScale(scale);
-
-    this.foundationStacks.forEach((stack) => {
-      stack.setScale(scale);
-    });
-
-    this.tableauStacks.forEach((stack) => {
-      stack.setScale(scale);
-    });
+    // 고정 스케일 사용 - 리사이즈 시 스케일 변경하지 않음
+    console.log(`[updateStacksScale] 스케일 변경 요청 무시: ${scale}`);
   }
 
   // Stock 클릭 처리
@@ -309,6 +307,10 @@ export class GameController {
     // 게임 상태 업데이트
     this.gameState.completeGame();
 
+    // 저장된 게임 상태 삭제
+    this.gameState.clearSavedGameState();
+    this.clearSavedCardState();
+
     // 완료 UI 표시
     this.scoreUI.showGameComplete();
   }
@@ -319,7 +321,7 @@ export class GameController {
 
     const lastMove = this.gameState.undoLastMove();
     if (lastMove) {
-      // 실제 이동 되돌리기 실행
+      // 실제 이동 되돌렸습니다.
       this.gameLogic.undoMove(lastMove);
 
       console.log("이동을 되돌렸습니다.");
@@ -506,5 +508,130 @@ export class GameController {
   // 토스트 UI 설정
   setToastUI(toastUI) {
     this.toastUI = toastUI;
+  }
+
+  // 카드 상태 저장
+  saveCardState() {
+    if (!this.gameState.isGameStarted || this.gameState.isGameCompleted)
+      return null;
+
+    const cardState = {
+      stock: this.stockStack.cards.map((card) => ({
+        suit: card.suit,
+        rank: card.rank,
+        isFaceUp: card.isFaceUp,
+      })),
+      waste: this.wasteStack.cards.map((card) => ({
+        suit: card.suit,
+        rank: card.rank,
+        isFaceUp: card.isFaceUp,
+      })),
+      foundations: this.foundationStacks.map((stack) =>
+        stack.cards.map((card) => ({
+          suit: card.suit,
+          rank: card.rank,
+          isFaceUp: card.isFaceUp,
+        }))
+      ),
+      tableaus: this.tableauStacks.map((stack) =>
+        stack.cards.map((card) => ({
+          suit: card.suit,
+          rank: card.rank,
+          isFaceUp: card.isFaceUp,
+        }))
+      ),
+    };
+
+    try {
+      localStorage.setItem("solitaire_card_state", JSON.stringify(cardState));
+      console.log("카드 상태가 저장되었습니다.");
+      return cardState;
+    } catch (error) {
+      console.error("카드 상태 저장 실패:", error);
+      return null;
+    }
+  }
+
+  // 카드 상태 복원
+  async restoreCardState() {
+    try {
+      const savedCardState = localStorage.getItem("solitaire_card_state");
+      if (!savedCardState) return false;
+
+      const cardState = JSON.parse(savedCardState);
+
+      // 기존 카드들 정리
+      this.clearGame();
+
+      // 새 덱 생성
+      this.deck = new Deck();
+
+      // 저장된 카드 상태로 덱 재구성
+      const allCards = [];
+
+      // Stock 카드들
+      cardState.stock.forEach((cardInfo) => {
+        const card = this.deck.findCard(cardInfo.suit, cardInfo.rank);
+        if (card) {
+          card.isFaceUp = cardInfo.isFaceUp;
+          this.stockStack.addCard(card);
+        }
+      });
+
+      // Waste 카드들
+      cardState.waste.forEach((cardInfo) => {
+        const card = this.deck.findCard(cardInfo.suit, cardInfo.rank);
+        if (card) {
+          card.isFaceUp = cardInfo.isFaceUp;
+          this.wasteStack.addCard(card);
+        }
+      });
+
+      // Foundation 카드들
+      cardState.foundations.forEach((foundationCards, index) => {
+        foundationCards.forEach((cardInfo) => {
+          const card = this.deck.findCard(cardInfo.suit, cardInfo.rank);
+          if (card) {
+            card.isFaceUp = cardInfo.isFaceUp;
+            this.foundationStacks[index].addCard(card);
+          }
+        });
+      });
+
+      // Tableau 카드들
+      cardState.tableaus.forEach((tableauCards, index) => {
+        tableauCards.forEach((cardInfo) => {
+          const card = this.deck.findCard(cardInfo.suit, cardInfo.rank);
+          if (card) {
+            card.isFaceUp = cardInfo.isFaceUp;
+            this.tableauStacks[index].addCard(card);
+          }
+        });
+      });
+
+      // 모든 스택의 카드 위치 업데이트
+      this.getAllStacks().forEach((stack) => {
+        if (stack && stack.updateAllCardPositions) {
+          stack.updateAllCardPositions();
+        }
+      });
+
+      console.log("카드 상태가 복원되었습니다.");
+      return true;
+    } catch (error) {
+      console.error("카드 상태 복원 실패:", error);
+      localStorage.removeItem("solitaire_card_state");
+      return false;
+    }
+  }
+
+  // 저장된 카드 상태 삭제
+  clearSavedCardState() {
+    try {
+      localStorage.removeItem("solitaire_card_state");
+      console.log("저장된 카드 상태가 삭제되었습니다.");
+    } catch (error) {
+      console.error("카드 상태 삭제 실패:", error);
+    }
   }
 }
