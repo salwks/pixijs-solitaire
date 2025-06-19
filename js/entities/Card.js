@@ -9,28 +9,32 @@ export class Card {
     this.faceUp = false;
     this.isDragging = false;
     this.isSelected = false;
-    this.isDraggable = true;
+    this.isDraggable = false;
+    this.isHovered = false;
+
+    // 화면 크기에 맞는 스케일 계산
+    const screenWidth = window.innerWidth;
+    const screenHeight = window.innerHeight;
+    this.scale = Math.min(screenWidth / 1024, screenHeight / 720);
+
+    // 드래그 관련 변수들
+    this.dragStart = null;
+    this.originalPosition = null;
+    this.lastClickTime = 0;
+    this.doubleClickDelay = 300;
+
+    // 스택 관련 변수들
+    this.currentStack = null;
+    this.stackIndex = -1;
+
+    // 컨테이너 생성
+    this.container = new PIXI.Container();
 
     // PixiJS 스프라이트들
     this.frontSprite = null;
     this.backSprite = null;
-    this.container = new PIXI.Container();
-
-    // 드래그 관련
-    this.dragStart = null;
-    this.originalPosition = { x: 0, y: 0 };
 
     // 카드 위치 및 스택 정보
-    this.currentStack = null;
-    this.stackIndex = 0;
-
-    // 더블클릭 처리
-    this.lastClickTime = 0;
-    this.doubleClickDelay = 300;
-
-    // 호버 상태
-    this.isHovered = false;
-
     this.createSprites();
     this.setupInteraction();
   }
@@ -40,7 +44,7 @@ export class Card {
     const frontTexture = PIXI.Assets.cache.get(`${this.rank}_${this.suit}`);
     if (frontTexture) {
       this.frontSprite = new PIXI.Sprite(frontTexture);
-      this.frontSprite.scale.set(CONSTANTS.CARD_SCALE);
+      this.frontSprite.scale.set(CONSTANTS.CARD_SCALE * this.scale);
       this.frontSprite.visible = this.faceUp;
       this.container.addChild(this.frontSprite);
     }
@@ -49,7 +53,7 @@ export class Card {
     const backTexture = PIXI.Assets.cache.get("card_back");
     if (backTexture) {
       this.backSprite = new PIXI.Sprite(backTexture);
-      this.backSprite.scale.set(CONSTANTS.CARD_SCALE);
+      this.backSprite.scale.set(CONSTANTS.CARD_SCALE * this.scale);
       this.backSprite.visible = !this.faceUp;
       this.container.addChild(this.backSprite);
     }
@@ -57,17 +61,16 @@ export class Card {
 
   setupInteraction() {
     this.container.interactive = true;
-    this.container.cursor = "pointer";
+    this.container.cursor = "grab";
 
-    // 이벤트 바인딩 - 수정된 부분
+    // 마우스 이벤트 리스너
     this.container.on("pointerdown", this.onPointerDown.bind(this));
     this.container.on("pointermove", this.onPointerMove.bind(this));
     this.container.on("pointerup", this.onPointerUp.bind(this));
     this.container.on("pointerupoutside", this.onPointerUp.bind(this));
-
-    // 호버 이벤트 설정 - 수정된 부분
     this.container.on("pointerover", this.onHover.bind(this));
     this.container.on("pointerout", this.onHoverOut.bind(this));
+    this.container.on("doubleclick", this.onDoubleClick.bind(this));
   }
 
   // 카드 뒤집기
@@ -83,6 +86,11 @@ export class Card {
       this.backSprite.visible = !this.faceUp;
     }
 
+    // 카드가 뒤집힐 때 드래그 가능 상태 업데이트
+    if (this.currentStack) {
+      this.currentStack.updateAllCardsDraggable();
+    }
+
     console.log(
       `카드 ${this.toString()} ${this.faceUp ? "앞면" : "뒷면"}으로 뒤집힘`
     );
@@ -91,16 +99,11 @@ export class Card {
   // 카드 선택 하이라이트
   setSelected(selected) {
     this.isSelected = selected;
-
     if (selected) {
-      // 선택된 카드 강조 - 틴트 사용
+      // 선택된 카드 강조 - 틴트만 사용
       this.container.tint = 0xffff99;
-      this.container.scale.set(CONSTANTS.CARD_SCALE * 1.05);
     } else {
       this.container.tint = 0xffffff;
-      if (!this.isHovered) {
-        this.container.scale.set(CONSTANTS.CARD_SCALE);
-      }
     }
   }
 
@@ -119,15 +122,12 @@ export class Card {
   onHover() {
     if (this.faceUp && !this.isDragging && !this.isSelected) {
       this.isHovered = true;
-      this.container.scale.set(CONSTANTS.CARD_SCALE * 1.05);
-      this.container.y -= 5; // 살짝 위로 이동
     }
   }
 
   onHoverOut() {
     if (!this.isDragging && !this.isSelected) {
       this.isHovered = false;
-      this.container.scale.set(CONSTANTS.CARD_SCALE);
 
       // 원래 위치로 복원
       if (this.currentStack) {
@@ -140,6 +140,17 @@ export class Card {
   setPosition(x, y) {
     this.container.x = x;
     this.container.y = y;
+  }
+
+  // 카드 스케일 설정
+  setScale(scale) {
+    this.scale = scale;
+    if (this.frontSprite) {
+      this.frontSprite.scale.set(CONSTANTS.CARD_SCALE * scale);
+    }
+    if (this.backSprite) {
+      this.backSprite.scale.set(CONSTANTS.CARD_SCALE * scale);
+    }
   }
 
   getPosition() {
@@ -202,70 +213,213 @@ export class Card {
 
   // 드래그 시작
   startDrag(event) {
+    console.log(`[startDrag] 시작`);
     this.isDragging = true;
-    this.dragStart = event.data.global.clone();
-    this.originalPosition = { x: this.container.x, y: this.container.y };
 
-    // 드래그 시작 시각적 효과
-    this.container.cursor = "grabbing";
-    this.container.scale.set(CONSTANTS.CARD_SCALE * 1.1);
-    this.container.alpha = 0.9;
+    // 클릭 위치와 카드의 글로벌 좌표 오프셋 계산
+    const mousePos = event.data.global; // stage 기준
+    console.log(`[startDrag] 마우스 위치:`, mousePos);
+    console.log(`[startDrag] container.parent:`, this.container.parent);
+    console.log(
+      `[startDrag] container.x, y:`,
+      this.container.x,
+      this.container.y
+    );
 
-    // 최상단으로 이동
-    if (this.container.parent) {
-      this.container.parent.setChildIndex(
-        this.container,
-        this.container.parent.children.length - 1
+    let cardGlobal;
+    try {
+      cardGlobal = this.container.parent.toGlobal(
+        new PIXI.Point(this.container.x, this.container.y)
       );
+      console.log(`[startDrag] cardGlobal 계산 성공:`, cardGlobal);
+    } catch (error) {
+      console.error(`[startDrag] cardGlobal 계산 실패:`, error);
+      // fallback: 원본 카드 위치 사용
+      cardGlobal = { x: this.container.x, y: this.container.y };
     }
+
+    this.dragOffset = {
+      x: mousePos.x - cardGlobal.x,
+      y: mousePos.y - cardGlobal.y,
+    };
+    this.dragStart = mousePos.clone();
+    this.originalPosition = { x: cardGlobal.x, y: cardGlobal.y };
 
     // 드래그할 카드들 결정 (Tableau에서는 연속된 카드들)
     let draggedCards = [this];
     if (this.currentStack?.type === "tableau") {
       draggedCards = this.currentStack.getCardsFromIndex(this.stackIndex);
+      console.log(
+        `[startDrag] Tableau에서 ${draggedCards.length}장의 카드 드래그:`,
+        draggedCards.map((c) => c.toString())
+      );
+    }
+
+    // 모든 드래그할 카드들을 숨기고 프록시 생성
+    this.dragProxies = [];
+
+    // 먼저 모든 원본 카드를 숨기기
+    draggedCards.forEach((card) => {
+      card.container.visible = false;
+    });
+
+    // 그 다음 모든 프록시를 순서대로 생성 (9, 8, 7 순서로)
+    draggedCards.forEach((card, index) => {
+      const proxy = this.createCardProxy(
+        card,
+        cardGlobal.x,
+        cardGlobal.y + index * CONSTANTS.STACK_OFFSET_Y * this.scale,
+        index === 0 // 첫 번째 프록시에만 이벤트 리스너 추가
+      );
+      this.dragProxies.push(proxy);
+    });
+
+    console.log(`[startDrag] ${this.dragProxies.length}개의 프록시 생성됨`);
+
+    // 드래그 시작 시각적 효과
+    if (this.dragProxies[0]) {
+      this.dragProxies[0].cursor = "grabbing";
+      this.dragProxies[0].alpha = 1; // 반투명 효과 제거
+
+      // 최상단으로 이동
+      if (this.dragProxies[0].parent) {
+        this.dragProxies[0].parent.setChildIndex(
+          this.dragProxies[0],
+          this.dragProxies[0].parent.children.length - 1
+        );
+      }
     }
 
     // 드래그 시작 이벤트 발생
     this.dispatchEvent("dragstart", {
       card: this,
-      cards: draggedCards,
+      cards: draggedCards, // 연속된 카드들 전달
       event: event,
     });
 
-    console.log(`카드 ${this.toString()} 드래그 시작`);
+    console.log(
+      `[startDrag] 카드 글로벌 좌표:`,
+      cardGlobal,
+      "마우스:",
+      mousePos,
+      "오프셋:",
+      this.dragOffset
+    );
   }
 
+  // 개별 카드 프록시 생성
+  createCardProxy(card, globalX, globalY, isFirst = false) {
+    console.log(
+      `[createCardProxy] 프록시 생성:`,
+      card.toString(),
+      "위치:",
+      globalX,
+      globalY
+    );
+
+    const proxy = new PIXI.Container();
+
+    if (card.faceUp && card.frontSprite) {
+      const front = new PIXI.Sprite(card.frontSprite.texture);
+      front.scale.set(card.frontSprite.scale.x, card.frontSprite.scale.y);
+      proxy.addChild(front);
+    } else if (card.backSprite) {
+      const back = new PIXI.Sprite(card.backSprite.texture);
+      back.scale.set(card.backSprite.scale.x, card.backSprite.scale.y);
+      proxy.addChild(back);
+    }
+
+    // stage 기준 좌표로 위치
+    proxy.x = globalX;
+    proxy.y = globalY;
+
+    // 레이어 순서 제어: 나중에 생성된 프록시가 위에 오도록
+    proxy.zIndex = 9999 + this.dragProxies.length;
+
+    // 첫 번째 프록시에만 마우스 이벤트 리스너 추가
+    if (isFirst) {
+      proxy.interactive = true;
+      proxy.cursor = "grabbing";
+      proxy.on("pointermove", this.onPointerMove.bind(this));
+      proxy.on("pointerup", this.onPointerUp.bind(this));
+      proxy.on("pointerupoutside", this.onPointerUp.bind(this));
+    }
+
+    // stage에 추가
+    if (window.PIXI_APP && window.PIXI_APP.stage) {
+      window.PIXI_APP.stage.addChild(proxy);
+    } else if (this.container.parent && this.container.parent.parent) {
+      this.container.parent.parent.addChild(proxy);
+    }
+
+    return proxy;
+  }
+
+  // 드래그 중 이동
   onPointerMove(event) {
-    if (this.isDragging) {
-      const newPosition = event.data.global;
-      const deltaX = newPosition.x - this.dragStart.x;
-      const deltaY = newPosition.y - this.dragStart.y;
+    if (this.isDragging && this.dragProxies && this.dragProxies.length > 0) {
+      const mousePos = event.data.global;
 
-      this.container.x = this.originalPosition.x + deltaX;
-      this.container.y = this.originalPosition.y + deltaY;
+      // 모든 프록시를 함께 이동
+      this.dragProxies.forEach((proxy, index) => {
+        proxy.x = mousePos.x - this.dragOffset.x;
+        proxy.y =
+          mousePos.y -
+          this.dragOffset.y +
+          index * CONSTANTS.STACK_OFFSET_Y * this.scale;
+      });
 
-      // 드래그 중 이벤트 발생
+      console.log(
+        `[onPointerMove] ${this.dragProxies.length}개 프록시 이동:`,
+        this.dragProxies[0].x,
+        this.dragProxies[0].y,
+        "마우스:",
+        mousePos,
+        "오프셋:",
+        this.dragOffset
+      );
+
       this.dispatchEvent("dragmove", {
         card: this,
         event: event,
-        deltaX: deltaX,
-        deltaY: deltaY,
+        deltaX: mousePos.x - this.dragStart.x,
+        deltaY: mousePos.y - this.dragStart.y,
       });
     }
   }
 
+  // 드래그 종료
   onPointerUp(event) {
     if (this.isDragging) {
+      console.log(`[onPointerUp] 드래그 종료`);
       this.isDragging = false;
 
-      // 드래그 종료 시각적 효과 복원
+      // 모든 프록시 제거
+      if (this.dragProxies) {
+        this.dragProxies.forEach((proxy) => {
+          if (proxy.parent) {
+            proxy.parent.removeChild(proxy);
+          }
+          proxy.destroy({ children: true });
+        });
+        this.dragProxies = [];
+      }
+
+      // 모든 원본 카드 다시 보이기
+      if (this.currentStack?.type === "tableau") {
+        const draggedCards = this.currentStack.getCardsFromIndex(
+          this.stackIndex
+        );
+        draggedCards.forEach((card) => {
+          card.container.visible = true;
+        });
+      } else {
+        this.container.visible = true;
+      }
+
       this.container.cursor = "grab";
-      this.container.scale.set(CONSTANTS.CARD_SCALE);
       this.container.alpha = 1.0;
-
-      // 드래그 종료 이벤트 발생
       this.dispatchEvent("dragend", { card: this, event: event });
-
       console.log(`카드 ${this.toString()} 드래그 종료`);
     }
   }

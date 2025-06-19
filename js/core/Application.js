@@ -18,17 +18,22 @@ export class GameApplication {
     try {
       console.log("PixiJS 솔리테어 게임 초기화 시작...");
 
+      // 화면 크기 가져오기
+      const screenWidth = window.innerWidth;
+      const screenHeight = window.innerHeight;
+
       // PixiJS 애플리케이션 생성
       this.app = new PIXI.Application();
 
-      // v8 스타일 초기화
+      // v8 스타일 초기화 - fullscreen
       await this.app.init({
-        width: CONSTANTS.GAME_WIDTH,
-        height: CONSTANTS.GAME_HEIGHT,
+        width: screenWidth,
+        height: screenHeight,
         backgroundColor: CONSTANTS.COLORS.BACKGROUND,
         antialias: true,
         resolution: window.devicePixelRatio || 1,
         autoDensity: true,
+        resizeTo: window, // 자동 resize 설정
       });
 
       // 캔버스를 DOM에 추가
@@ -61,6 +66,9 @@ export class GameApplication {
       // UI 이벤트 설정
       this.setupUI();
 
+      // Resize 이벤트 설정
+      this.setupResizeHandler();
+
       // 로딩 완료
       document.getElementById("loading").style.display = "none";
 
@@ -92,6 +100,28 @@ export class GameApplication {
     document.getElementById("hintBtn").addEventListener("click", () => {
       if (this.gameController) {
         this.gameController.showHint();
+      }
+    });
+  }
+
+  setupResizeHandler() {
+    // 화면 크기 변경 시 게임보드와 카드 크기 조정
+    window.addEventListener("resize", () => {
+      if (this.gameBoard && this.gameController) {
+        const newWidth = window.innerWidth;
+        const newHeight = window.innerHeight;
+
+        // 게임보드 resize
+        this.gameBoard.resize(newWidth, newHeight);
+
+        // 카드 스케일 재계산
+        const globalScale = Math.min(newWidth / 1024, newHeight / 720);
+        this.gameController.updateStacksScale(globalScale);
+
+        // 모든 카드 위치 업데이트
+        this.gameController.getAllStacks().forEach((stack) => {
+          stack.updateAllCardPositions();
+        });
       }
     });
   }

@@ -8,7 +8,7 @@ export const CONSTANTS = {
   // 카드 설정
   CARD_WIDTH: 71,
   CARD_HEIGHT: 96,
-  CARD_SCALE: 0.8,
+  CARD_SCALE: 1.0,
   CARD_SPACING: 18,
   STACK_OFFSET_Y: 20,
 

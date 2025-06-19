@@ -14,6 +14,11 @@ export class GameBoard {
     this.foundations = [];
     this.tableaus = [];
     this.initialized = false;
+
+    // 현재 화면 크기
+    this.screenWidth = window.innerWidth;
+    this.screenHeight = window.innerHeight;
+    this.scale = Math.min(this.screenWidth / 1024, this.screenHeight / 720);
   }
 
   async init() {
@@ -28,9 +33,9 @@ export class GameBoard {
   }
 
   setupBackground() {
-    // 기본 배경
+    // 기본 배경 - fullscreen
     const background = new PIXI.Graphics();
-    background.rect(0, 0, CONSTANTS.GAME_WIDTH, CONSTANTS.GAME_HEIGHT);
+    background.rect(0, 0, this.screenWidth, this.screenHeight);
     background.fill({ color: CONSTANTS.COLORS.BACKGROUND });
     this.container.addChild(background);
 
@@ -49,19 +54,19 @@ export class GameBoard {
     const texture = new PIXI.Graphics();
 
     // 미세한 격자 패턴
-    for (let x = 0; x < CONSTANTS.GAME_WIDTH; x += 20) {
-      for (let y = 0; y < CONSTANTS.GAME_HEIGHT; y += 20) {
-        texture.circle(x, y, 0.5);
+    for (let x = 0; x < this.screenWidth; x += 20 * this.scale) {
+      for (let y = 0; y < this.screenHeight; y += 20 * this.scale) {
+        texture.circle(x, y, 0.5 * this.scale);
         texture.fill({ color: 0x1a6b54, alpha: 0.3 });
       }
     }
 
     // 나무 결 패턴
     for (let i = 0; i < 10; i++) {
-      const y = (CONSTANTS.GAME_HEIGHT / 10) * i;
+      const y = (this.screenHeight / 10) * i;
       texture.moveTo(0, y);
-      texture.lineTo(CONSTANTS.GAME_WIDTH, y + Math.sin(i) * 5);
-      texture.stroke({ color: 0x0f4c3a, width: 1, alpha: 0.2 });
+      texture.lineTo(this.screenWidth, y + Math.sin(i) * 5 * this.scale);
+      texture.stroke({ color: 0x0f4c3a, width: 1 * this.scale, alpha: 0.2 });
     }
 
     this.container.addChild(texture);
@@ -72,9 +77,9 @@ export class GameBoard {
     const lighting = new PIXI.Graphics();
 
     // 중앙에서 퍼져나가는 방사형 그라데이션 효과
-    const centerX = CONSTANTS.GAME_WIDTH / 2;
-    const centerY = CONSTANTS.GAME_HEIGHT / 2;
-    const radius = Math.max(CONSTANTS.GAME_WIDTH, CONSTANTS.GAME_HEIGHT) / 2;
+    const centerX = this.screenWidth / 2;
+    const centerY = this.screenHeight / 2;
+    const radius = Math.max(this.screenWidth, this.screenHeight) / 2;
 
     // 여러 개의 동심원으로 그라데이션 시뮬레이션
     for (let i = 0; i < 20; i++) {
@@ -89,44 +94,57 @@ export class GameBoard {
   }
 
   drawCardSlots() {
-    const slotTexture = PIXI.Assets.cache.get("empty_slot");
+    const margin = CONSTANTS.MARGIN * this.scale;
+    const cardWidth = CONSTANTS.CARD_WIDTH * CONSTANTS.CARD_SCALE * this.scale;
+    const cardHeight =
+      CONSTANTS.CARD_HEIGHT * CONSTANTS.CARD_SCALE * this.scale;
+    const gap = 10 * this.scale;
+    const cornerRadius = 8 * this.scale; // 카드와 동일한 모서리 둥글기
 
-    // Stock Pile 위치 (좌상단)
-    const stockSlot = new PIXI.Sprite(slotTexture);
-    stockSlot.position.set(CONSTANTS.MARGIN, CONSTANTS.MARGIN);
-    stockSlot.scale.set(CONSTANTS.CARD_SCALE);
+    // 패널을 그리는 함수
+    const createSlot = (x, y) => {
+      const slot = new PIXI.Graphics();
+      slot.roundRect(0, 0, cardWidth, cardHeight, cornerRadius);
+      slot.fill({ color: CONSTANTS.COLORS.EMPTY_SLOT, alpha: 0.3 });
+      // 테두리 라인 제거
+      slot.position.set(x, y);
+      return slot;
+    };
+
+    // Stock Pile 위치 (좌하단)
+    const stockSlot = createSlot(
+      margin,
+      this.screenHeight - margin - cardHeight
+    );
     this.container.addChild(stockSlot);
 
-    // Waste Pile 위치 (Stock 옆)
-    const wasteSlot = new PIXI.Sprite(slotTexture);
-    wasteSlot.position.set(
-      CONSTANTS.MARGIN + CONSTANTS.CARD_WIDTH * CONSTANTS.CARD_SCALE + 20,
-      CONSTANTS.MARGIN
+    // Waste Pile 위치 (Stock 옆, 좌하단)
+    const wasteSlot = createSlot(
+      margin + cardWidth + gap,
+      this.screenHeight - margin - cardHeight
     );
-    wasteSlot.scale.set(CONSTANTS.CARD_SCALE);
     this.container.addChild(wasteSlot);
 
-    // Foundation 위치들 (우상단 4개)
+    // Foundation 위치들 (우하단 4개)
+    const foundationStartX = this.screenWidth - margin - (cardWidth + gap) * 4;
     for (let i = 0; i < CONSTANTS.GAME.FOUNDATION_PILES; i++) {
-      const foundationSlot = new PIXI.Sprite(slotTexture);
-      foundationSlot.position.set(
-        CONSTANTS.FOUNDATION_START_X +
-          i * (CONSTANTS.CARD_WIDTH * CONSTANTS.CARD_SCALE + 10),
-        CONSTANTS.MARGIN
+      const foundationSlot = createSlot(
+        foundationStartX + i * (cardWidth + gap),
+        this.screenHeight - margin - cardHeight
       );
-      foundationSlot.scale.set(CONSTANTS.CARD_SCALE);
       this.container.addChild(foundationSlot);
     }
 
-    // Tableau 위치들 (하단 7개)
+    // Tableau 위치들 (상단 중앙 7개)
+    const tableauTotalWidth = cardWidth * 7 + gap * 6;
+    const tableauStartX = (this.screenWidth - tableauTotalWidth) / 2;
+    const tableauStartY = margin;
+
     for (let i = 0; i < CONSTANTS.GAME.TABLEAU_COLUMNS; i++) {
-      const tableauSlot = new PIXI.Sprite(slotTexture);
-      tableauSlot.position.set(
-        CONSTANTS.MARGIN +
-          i * (CONSTANTS.CARD_WIDTH * CONSTANTS.CARD_SCALE + 10),
-        CONSTANTS.TABLEAU_START_Y
+      const tableauSlot = createSlot(
+        tableauStartX + i * (cardWidth + gap),
+        tableauStartY
       );
-      tableauSlot.scale.set(CONSTANTS.CARD_SCALE);
       this.container.addChild(tableauSlot);
     }
   }
@@ -157,5 +175,23 @@ export class GameBoard {
 
   isInitialized() {
     return this.initialized;
+  }
+
+  // 화면 크기 변경 시 호출
+  resize(width, height) {
+    this.screenWidth = width;
+    this.screenHeight = height;
+    this.scale = Math.min(width / 1024, height / 720);
+
+    // 기존 배경 제거
+    this.container.removeChildren();
+
+    // 새로운 배경 설정
+    this.setupBackground();
+  }
+
+  // 현재 스케일 반환
+  getScale() {
+    return this.scale;
   }
 }

@@ -64,20 +64,25 @@ export class GameController {
 
   // 게임 스택들 생성
   createGameStacks() {
+    // 화면 크기에 맞는 스케일 계산
+    const screenWidth = window.innerWidth;
+    const screenHeight = window.innerHeight;
+    const globalScale = Math.min(screenWidth / 1024, screenHeight / 720);
+
     // Stock & Waste 스택
-    this.stockStack = new CardStack("stock");
-    this.wasteStack = new CardStack("waste");
+    this.stockStack = new CardStack("stock", 0, globalScale);
+    this.wasteStack = new CardStack("waste", 0, globalScale);
 
     // Foundation 스택들 (4개)
     this.foundationStacks = [];
     for (let i = 0; i < CONSTANTS.GAME.FOUNDATION_PILES; i++) {
-      this.foundationStacks.push(new CardStack("foundation", i));
+      this.foundationStacks.push(new CardStack("foundation", i, globalScale));
     }
 
     // Tableau 스택들 (7개)
     this.tableauStacks = [];
     for (let i = 0; i < CONSTANTS.GAME.TABLEAU_COLUMNS; i++) {
-      this.tableauStacks.push(new CardStack("tableau", i));
+      this.tableauStacks.push(new CardStack("tableau", i, globalScale));
     }
 
     // 게임보드에 스택들 추가
@@ -167,6 +172,20 @@ export class GameController {
       ...this.foundationStacks,
       ...this.tableauStacks,
     ];
+  }
+
+  // 모든 스택들의 스케일 업데이트
+  updateStacksScale(scale) {
+    if (this.stockStack) this.stockStack.setScale(scale);
+    if (this.wasteStack) this.wasteStack.setScale(scale);
+
+    this.foundationStacks.forEach((stack) => {
+      stack.setScale(scale);
+    });
+
+    this.tableauStacks.forEach((stack) => {
+      stack.setScale(scale);
+    });
   }
 
   // Stock 클릭 처리

@@ -118,35 +118,49 @@ export class Utils {
   }
 
   // 카드 더미 위치 계산
-  static getStackPosition(stackType, index = 0) {
+  static getStackPosition(stackType, index = 0, scale = 1) {
+    // 현재 화면 크기 사용
+    const screenWidth = window.innerWidth;
+    const screenHeight = window.innerHeight;
+
+    const cardWidth = CONSTANTS.CARD_WIDTH * CONSTANTS.CARD_SCALE * scale;
+    const cardHeight = CONSTANTS.CARD_HEIGHT * CONSTANTS.CARD_SCALE * scale;
+
+    const horizontalGap = 10 * scale;
+    const margin = CONSTANTS.MARGIN * scale;
+
     switch (stackType) {
       case "stock":
+        // 좌하단에 배치
         return {
-          x: CONSTANTS.MARGIN,
-          y: CONSTANTS.MARGIN,
+          x: margin,
+          y: screenHeight - margin - cardHeight,
         };
 
       case "waste":
+        // Stock 옆에 배치
         return {
-          x:
-            CONSTANTS.MARGIN + CONSTANTS.CARD_WIDTH * CONSTANTS.CARD_SCALE + 20,
-          y: CONSTANTS.MARGIN,
+          x: margin + cardWidth + horizontalGap,
+          y: screenHeight - margin - cardHeight,
         };
 
       case "foundation":
+        // 우하단에 4개 배치
+        const foundationStartX =
+          screenWidth - margin - (cardWidth + horizontalGap) * 4;
         return {
-          x:
-            CONSTANTS.FOUNDATION_START_X +
-            index * (CONSTANTS.CARD_WIDTH * CONSTANTS.CARD_SCALE + 10),
-          y: CONSTANTS.MARGIN,
+          x: foundationStartX + index * (cardWidth + horizontalGap),
+          y: screenHeight - margin - cardHeight,
         };
 
       case "tableau":
+        // 중앙 상단에 7개 배치
+        const tableauTotalWidth = cardWidth * 7 + horizontalGap * 6;
+        const tableauStartX = (screenWidth - tableauTotalWidth) / 2;
+        const tableauStartY = margin;
         return {
-          x:
-            CONSTANTS.MARGIN +
-            index * (CONSTANTS.CARD_WIDTH * CONSTANTS.CARD_SCALE + 10),
-          y: CONSTANTS.TABLEAU_START_Y,
+          x: tableauStartX + index * (cardWidth + horizontalGap),
+          y: tableauStartY,
         };
 
       default:
