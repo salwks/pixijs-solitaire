@@ -333,6 +333,12 @@ export class GameController {
   // 힌트 표시
   showHint() {
     if (!this.gameState.isPlaying() || !this.gameState.settings.hintEnabled) {
+      if (this.toastUI) {
+        this.toastUI.showToast(
+          "게임이 진행 중이 아니거나 힌트가 비활성화되어 있습니다.",
+          5000
+        );
+      }
       return;
     }
 
@@ -347,7 +353,13 @@ export class GameController {
 
       if (bestMove.type === "draw_stock") {
         // Stock 클릭 힌트
+        const message = "💡 힌트: Stock을 클릭하여 카드를 뽑으세요.";
         console.log("힌트: Stock을 클릭하여 카드를 뽑으세요.");
+
+        if (this.toastUI) {
+          this.toastUI.showToast(message, 5000);
+        }
+
         // Stock 스택 하이라이트
         this.stockStack.onDropZoneEnter();
         setTimeout(() => {
@@ -356,14 +368,22 @@ export class GameController {
       } else if (bestMove.card) {
         // 카드 이동 힌트
         this.cardAnimation.animateHint(bestMove.card);
-        console.log(
-          `힌트: ${bestMove.card.toString()}를 ${
-            bestMove.toStack?.type || ""
-          }로 이동하세요.`
-        );
+        const message = `💡 힌트: ${bestMove.card.toString()}를 ${
+          bestMove.toStack?.type || ""
+        }로 이동하세요.`;
+        console.log(message);
+
+        if (this.toastUI) {
+          this.toastUI.showToast(message, 5000);
+        }
       }
     } else {
+      const message = "💡 사용 가능한 힌트가 없습니다.";
       console.log("사용 가능한 힌트가 없습니다.");
+
+      if (this.toastUI) {
+        this.toastUI.showToast(message, 5000);
+      }
     }
   }
 
@@ -481,5 +501,10 @@ export class GameController {
     this.getAllStacks().forEach((stack) => stack.destroy());
 
     console.log("게임 컨트롤러가 정리되었습니다.");
+  }
+
+  // 토스트 UI 설정
+  setToastUI(toastUI) {
+    this.toastUI = toastUI;
   }
 }

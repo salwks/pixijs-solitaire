@@ -40,22 +40,162 @@ export class Card {
   }
 
   createSprites() {
-    // 앞면 스프라이트
-    const frontTexture = PIXI.Assets.cache.get(`${this.rank}_${this.suit}`);
-    if (frontTexture) {
-      this.frontSprite = new PIXI.Sprite(frontTexture);
-      this.frontSprite.scale.set(CONSTANTS.CARD_SCALE * this.scale);
-      this.frontSprite.visible = this.faceUp;
-      this.container.addChild(this.frontSprite);
-    }
+    // 앞면 스프라이트 - 프로그래밍 방식으로 생성
+    this.frontSprite = this.createCardFront();
+    this.frontSprite.visible = this.faceUp;
+    this.container.addChild(this.frontSprite);
 
-    // 뒷면 스프라이트
-    const backTexture = PIXI.Assets.cache.get("card_back");
-    if (backTexture) {
-      this.backSprite = new PIXI.Sprite(backTexture);
-      this.backSprite.scale.set(CONSTANTS.CARD_SCALE * this.scale);
-      this.backSprite.visible = !this.faceUp;
-      this.container.addChild(this.backSprite);
+    // 뒷면 스프라이트 - 프로그래밍 방식으로 생성
+    this.backSprite = this.createCardBack();
+    this.backSprite.visible = !this.faceUp;
+    this.container.addChild(this.backSprite);
+  }
+
+  // 카드 앞면 생성 (PixiJS API 활용)
+  createCardFront() {
+    const cardContainer = new PIXI.Container();
+
+    // 카드 크기
+    const cardWidth = 70 * CONSTANTS.CARD_SCALE * this.scale;
+    const cardHeight = 98 * CONSTANTS.CARD_SCALE * this.scale;
+
+    // 그림자 효과 (조명과 어울리게)
+    const shadow = new PIXI.Graphics();
+    shadow.beginFill(0x000000, 0.25);
+    shadow.drawRoundedRect(4, -4, cardWidth, cardHeight, 6);
+
+    // 그림자에 blur 효과 추가
+    shadow.filters = [new PIXI.BlurFilter(2)];
+
+    shadow.endFill();
+    cardContainer.addChild(shadow);
+
+    // 카드 배경 (둥근 모서리)
+    const cardBackground = new PIXI.Graphics();
+    cardBackground.beginFill(0xffffff);
+    cardBackground.lineStyle(2, 0x000000, 1);
+    cardBackground.drawRoundedRect(0, 0, cardWidth, cardHeight, 6);
+    cardBackground.endFill();
+    cardContainer.addChild(cardBackground);
+
+    // 카드 색상 결정
+    const cardColor = this.isRed() ? 0xff0000 : 0x000000;
+
+    // 카드 크기에 따른 폰트 크기 계산
+    const fontSize = Math.max(12, Math.floor(14 * this.scale));
+    const smallFontSize = Math.max(8, Math.floor(10 * this.scale));
+
+    // 여백 설정
+    const margin = Math.max(3, Math.floor(4 * this.scale));
+
+    // 왼쪽 상단 숫자와 문양
+    const topLeftText = new PIXI.Text(this.rank, {
+      fontFamily: "Arial, sans-serif",
+      fontSize: fontSize,
+      fill: cardColor,
+      fontWeight: "bold",
+    });
+    topLeftText.x = margin;
+    topLeftText.y = margin;
+    cardContainer.addChild(topLeftText);
+
+    const topLeftSuit = new PIXI.Text(this.getSuitSymbol(), {
+      fontFamily: "Arial, sans-serif",
+      fontSize: smallFontSize,
+      fill: cardColor,
+    });
+    topLeftSuit.x = margin;
+    topLeftSuit.y = topLeftText.y + fontSize + 1;
+    cardContainer.addChild(topLeftSuit);
+
+    // 오른쪽 하단 숫자와 문양 (180도 회전)
+    const bottomRightText = new PIXI.Text(this.rank, {
+      fontFamily: "Arial, sans-serif",
+      fontSize: fontSize,
+      fill: cardColor,
+      fontWeight: "bold",
+    });
+    bottomRightText.anchor.set(0.5, 0.5);
+    bottomRightText.x = cardWidth - margin - fontSize / 2;
+    bottomRightText.y = cardHeight - margin - fontSize / 2;
+    bottomRightText.rotation = Math.PI;
+    cardContainer.addChild(bottomRightText);
+
+    const bottomRightSuit = new PIXI.Text(this.getSuitSymbol(), {
+      fontFamily: "Arial, sans-serif",
+      fontSize: smallFontSize,
+      fill: cardColor,
+    });
+    bottomRightSuit.anchor.set(0.5, 0.5);
+    bottomRightSuit.x = cardWidth - margin - fontSize / 2;
+    bottomRightSuit.y = cardHeight - margin - fontSize - smallFontSize / 2;
+    bottomRightSuit.rotation = Math.PI;
+    cardContainer.addChild(bottomRightSuit);
+
+    // 중앙 문양 (큰 크기)
+    const centerSuit = new PIXI.Text(this.getSuitSymbol(), {
+      fontFamily: "Arial, sans-serif",
+      fontSize: fontSize * 1.8,
+      fill: cardColor,
+    });
+    centerSuit.anchor.set(0.5, 0.5);
+    centerSuit.x = cardWidth / 2;
+    centerSuit.y = cardHeight / 2;
+    cardContainer.addChild(centerSuit);
+
+    return cardContainer;
+  }
+
+  // 카드 뒷면 생성 (PixiJS API 활용)
+  createCardBack() {
+    const cardContainer = new PIXI.Container();
+
+    // 카드 크기
+    const cardWidth = 70 * CONSTANTS.CARD_SCALE * this.scale;
+    const cardHeight = 98 * CONSTANTS.CARD_SCALE * this.scale;
+
+    // 그림자 효과 (조명과 어울리게)
+    const shadow = new PIXI.Graphics();
+    shadow.beginFill(0x000000, 0.25);
+    shadow.drawRoundedRect(4, -4, cardWidth, cardHeight, 6);
+
+    // 그림자에 blur 효과 추가
+    shadow.filters = [new PIXI.BlurFilter(2)];
+
+    shadow.endFill();
+    cardContainer.addChild(shadow);
+
+    // 카드 배경 (둥근 모서리)
+    const cardBackground = new PIXI.Graphics();
+    cardBackground.beginFill(0xffffff);
+    cardBackground.lineStyle(2, 0x000000, 1);
+    cardBackground.drawRoundedRect(0, 0, cardWidth, cardHeight, 6);
+    cardBackground.endFill();
+    cardContainer.addChild(cardBackground);
+
+    // 보라색 영역 (마진 적용)
+    const purpleArea = new PIXI.Graphics();
+    purpleArea.beginFill(0x800080);
+    purpleArea.drawRoundedRect(4, 4, cardWidth - 8, cardHeight - 8, 4);
+    purpleArea.endFill();
+    cardContainer.addChild(purpleArea);
+
+    return cardContainer;
+  }
+
+  // 문양 심볼 반환
+  getSuitSymbol() {
+    switch (this.suit) {
+      case "hearts":
+        return "♥";
+      case "diamonds":
+        return "♦";
+      case "clubs":
+        return "♣";
+      case "spades":
+        return "♠";
+      default:
+        return "";
     }
   }
 
@@ -145,11 +285,21 @@ export class Card {
   // 카드 스케일 설정
   setScale(scale) {
     this.scale = scale;
+
+    // 앞면 카드 재생성 (새로운 스케일로)
     if (this.frontSprite) {
-      this.frontSprite.scale.set(CONSTANTS.CARD_SCALE * scale);
+      this.container.removeChild(this.frontSprite);
+      this.frontSprite = this.createCardFront();
+      this.frontSprite.visible = this.faceUp;
+      this.container.addChild(this.frontSprite);
     }
+
+    // 뒷면 카드 재생성 (새로운 스케일로)
     if (this.backSprite) {
-      this.backSprite.scale.set(CONSTANTS.CARD_SCALE * scale);
+      this.container.removeChild(this.backSprite);
+      this.backSprite = this.createCardBack();
+      this.backSprite.visible = !this.faceUp;
+      this.container.addChild(this.backSprite);
     }
   }
 
@@ -319,14 +469,15 @@ export class Card {
 
     const proxy = new PIXI.Container();
 
+    // 카드 앞면 또는 뒷면 복사
     if (card.faceUp && card.frontSprite) {
-      const front = new PIXI.Sprite(card.frontSprite.texture);
-      front.scale.set(card.frontSprite.scale.x, card.frontSprite.scale.y);
-      proxy.addChild(front);
+      // 앞면 카드 복사
+      const frontCopy = card.createCardFront();
+      proxy.addChild(frontCopy);
     } else if (card.backSprite) {
-      const back = new PIXI.Sprite(card.backSprite.texture);
-      back.scale.set(card.backSprite.scale.x, card.backSprite.scale.y);
-      proxy.addChild(back);
+      // 뒷면 카드 복사
+      const backCopy = card.createCardBack();
+      proxy.addChild(backCopy);
     }
 
     // stage 기준 좌표로 위치

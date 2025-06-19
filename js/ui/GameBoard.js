@@ -39,14 +39,48 @@ export class GameBoard {
     background.fill({ color: CONSTANTS.COLORS.BACKGROUND });
     this.container.addChild(background);
 
+    // 조명 효과 (그라데이션)
+    this.addLightingGradient();
+
     // 테이블 질감 효과
     this.addTableTexture();
 
-    // 조명 효과
-    this.addLightingEffect();
-
     // 카드 영역 표시를 위한 가이드라인
     this.drawCardSlots();
+  }
+
+  // 조명 그라데이션 효과 추가
+  addLightingGradient() {
+    // 캔버스에 그라데이션 생성
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    canvas.width = this.screenWidth;
+    canvas.height = this.screenHeight;
+
+    // 방사형 그라데이션 생성
+    const gradient = ctx.createRadialGradient(
+      this.screenWidth / 2,
+      this.screenHeight / 2,
+      0,
+      this.screenWidth / 2,
+      this.screenHeight / 2,
+      Math.max(this.screenWidth, this.screenHeight) * 0.5
+    );
+
+    gradient.addColorStop(0, "rgba(255, 255, 255, 0.15)");
+    gradient.addColorStop(0.3, "rgba(255, 255, 255, 0.08)");
+    gradient.addColorStop(0.7, "rgba(255, 255, 255, 0.03)");
+    gradient.addColorStop(1, "rgba(255, 255, 255, 0)");
+
+    // 그라데이션 그리기
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, this.screenWidth, this.screenHeight);
+
+    // 캔버스를 텍스처로 변환
+    const texture = PIXI.Texture.from(canvas);
+    const lighting = new PIXI.Sprite(texture);
+
+    this.container.addChild(lighting);
   }
 
   // 테이블 질감 추가
@@ -70,27 +104,6 @@ export class GameBoard {
     }
 
     this.container.addChild(texture);
-  }
-
-  // 조명 효과 추가
-  addLightingEffect() {
-    const lighting = new PIXI.Graphics();
-
-    // 중앙에서 퍼져나가는 방사형 그라데이션 효과
-    const centerX = this.screenWidth / 2;
-    const centerY = this.screenHeight / 2;
-    const radius = Math.max(this.screenWidth, this.screenHeight) / 2;
-
-    // 여러 개의 동심원으로 그라데이션 시뮬레이션
-    for (let i = 0; i < 20; i++) {
-      const currentRadius = (radius / 20) * (i + 1);
-      const alpha = 0.1 * (1 - i / 20);
-
-      lighting.circle(centerX, centerY, currentRadius);
-      lighting.fill({ color: 0xffffff, alpha: alpha });
-    }
-
-    this.container.addChild(lighting);
   }
 
   drawCardSlots() {

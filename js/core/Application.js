@@ -4,6 +4,7 @@ import { CONSTANTS } from "./Constants.js";
 import { AssetLoader } from "./AssetLoader.js";
 import { GameBoard } from "../ui/GameBoard.js";
 import { GameController } from "../game/GameController.js";
+import { ToastUI } from "../ui/ToastUI.js";
 
 export class GameApplication {
   constructor() {
@@ -11,6 +12,7 @@ export class GameApplication {
     this.assetLoader = null;
     this.gameBoard = null;
     this.gameController = null;
+    this.toastUI = null;
     this.isLoaded = false;
   }
 
@@ -63,6 +65,10 @@ export class GameApplication {
       this.gameController = new GameController(this.app, this.gameBoard);
       this.gameBoard.setGameController(this.gameController);
 
+      // 토스트 UI 초기화
+      this.toastUI = new ToastUI(this.app);
+      this.gameController.setToastUI(this.toastUI);
+
       // UI 이벤트 설정
       this.setupUI();
 
@@ -113,6 +119,11 @@ export class GameApplication {
 
         // 게임보드 resize
         this.gameBoard.resize(newWidth, newHeight);
+
+        // 토스트 UI resize
+        if (this.toastUI) {
+          this.toastUI.resize(newWidth, newHeight);
+        }
 
         // 카드 스케일 재계산
         const globalScale = Math.min(newWidth / 1024, newHeight / 720);
