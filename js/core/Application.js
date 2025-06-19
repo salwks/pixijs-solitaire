@@ -20,6 +20,9 @@ export class GameApplication {
     try {
       console.log("PixiJS 솔리테어 게임 초기화 시작...");
 
+      // 전역 에러 핸들러 설정
+      this.setupGlobalErrorHandlers();
+
       // 화면 크기 가져오기
       const screenWidth = window.innerWidth;
       const screenHeight = window.innerHeight;
@@ -42,9 +45,6 @@ export class GameApplication {
       const gameContainer = document.getElementById("gameContainer");
       gameContainer.appendChild(this.app.canvas);
       this.app.canvas.id = "gameCanvas";
-
-      // 전역에서 접근 가능하도록 설정
-      window.PIXI_APP = this.app;
 
       // 로딩 텍스트 업데이트
       document.getElementById("loading").textContent = "에셋 로딩 중...";
@@ -116,10 +116,26 @@ export class GameApplication {
   setupResizeHandler() {
     let resizeTimeout;
     let isResizing = false;
+    let lastWidth = window.innerWidth;
+    let lastHeight = window.innerHeight;
 
     // 화면 크기 변경 시 게임보드와 카드 크기 조정
     window.addEventListener("resize", () => {
-      if (this.gameBoard && this.gameController) {
+      try {
+        if (!this.gameBoard || !this.gameController) {
+          console.warn("게임 컴포넌트가 초기화되지 않았습니다.");
+          return;
+        }
+
+        const currentWidth = window.innerWidth;
+        const currentHeight = window.innerHeight;
+
+        // 최소 크기 체크 (너무 작으면 무시)
+        if (currentWidth < 800 || currentHeight < 600) {
+          console.warn("화면 크기가 너무 작습니다. 리사이즈를 무시합니다.");
+          return;
+        }
+
         // 리사이즈 시작 시 게임 일시정지
         if (!isResizing) {
           isResizing = true;
@@ -136,27 +152,144 @@ export class GameApplication {
 
         // 리사이즈 완료 후 실행할 작업
         resizeTimeout = setTimeout(() => {
-          isResizing = false;
+          try {
+            isResizing = false;
 
-          const newWidth = window.innerWidth;
-          const newHeight = window.innerHeight;
+            // 크기 변화가 실제로 있는지 확인
+            if (
+              Math.abs(currentWidth - lastWidth) < 10 &&
+              Math.abs(currentHeight - lastHeight) < 10
+            ) {
+              console.log("크기 변화가 미미하여 리사이즈를 건너뜁니다.");
+              return;
+            }
 
-          // 게임보드 resize
-          this.gameBoard.resize(newWidth, newHeight);
+            lastWidth = currentWidth;
+            lastHeight = currentHeight;
 
-          // 토스트 UI resize
-          if (this.toastUI) {
-            this.toastUI.resize(newWidth, newHeight);
+            console.log(`리사이즈 완료: ${currentWidth}x${currentHeight}`);
+
+            // PixiJS 앱 리사이즈
+            if (this.app && this.app.renderer) {
+              this.app.renderer.resize(currentWidth, currentHeight);
+            }
+
+            // 게임보드 resize
+            if (this.gameBoard && this.gameBoard.resize) {
+              this.gameBoard.resize(currentWidth, currentHeight);
+            }
+
+            // 토스트 UI resize
+            if (this.toastUI && this.toastUI.resize) {
+              this.toastUI.resize(currentWidth, currentHeight);
+            }
+
+            // 게임 컨트롤러 복구
+            if (this.gameController) {
+              // 게임 무결성 검사
+              if (!this.gameController.checkGameIntegrity()) {
+                console.warn("게임 무결성 문제 발견, 복구 시도...");
+                this.gameController.recoverGame();
+              }
+
+              // 게임 재개
+              if (this.gameController.gameState.isPaused) {
+                this.gameController.gameState.isPaused = false;
+                console.log("리사이즈 완료: 게임 재개");
+              }
+            }
+          } catch (error) {
+            console.error("리사이즈 처리 중 오류:", error);
+            // 에러 발생 시 게임 복구 시도
+            if (this.gameController) {
+              this.gameController.recoverGame();
+            }
           }
-
-          // 게임 재개
-          if (this.gameController.gameState.isPaused) {
-            this.gameController.gameState.isPaused = false;
-            console.log("리사이즈 완료: 게임 재개");
-          }
-        }, 300); // 300ms 후 리사이즈 완료로 간주
+        }, 500); // 500ms로 증가하여 더 안정적으로 처리
+      } catch (error) {
+        console.error("리사이즈 이벤트 처리 중 오류:", error);
+        // 에러 발생 시 게임 재개
+        if (this.gameController && this.gameController.gameState.isPaused) {
+          this.gameController.gameState.isPaused = false;
+        }
       }
     });
+
+    // 페이지 가시성 변경 시 처리 (사이드바 등으로 인한 변화)
+    document.addEventListener("visibilitychange", () => {
+      if (
+        !document.hidden &&
+        this.gameController &&
+        this.gameController.gameState.isPaused
+      ) {
+        // 페이지가 다시 보이면 게임 재개
+        setTimeout(() => {
+          this.gameController.gameState.isPaused = false;
+          console.log("페이지 가시성 복구: 게임 재개");
+        }, 100);
+      }
+    });
+
+    // 윈도우 포커스 변경 시 처리
+    window.addEventListener("focus", () => {
+      if (this.gameController && this.gameController.gameState.isPaused) {
+        setTimeout(() => {
+          this.gameController.gameState.isPaused = false;
+          console.log("윈도우 포커스 복구: 게임 재개");
+        }, 100);
+      }
+    });
+  }
+
+  // 전역 에러 핸들러 설정
+  setupGlobalErrorHandlers() {
+    // 전역 에러 핸들러
+    window.addEventListener("error", (event) => {
+      console.error("전역 에러 발생:", event.error);
+      this.handleGameError(event.error);
+    });
+
+    // Promise 에러 핸들러
+    window.addEventListener("unhandledrejection", (event) => {
+      console.error("처리되지 않은 Promise 에러:", event.reason);
+      this.handleGameError(event.reason);
+    });
+
+    // PixiJS 에러 핸들러
+    if (PIXI && PIXI.utils) {
+      PIXI.utils.skipHello(); // PixiJS 로고 숨기기
+    }
+  }
+
+  // 게임 에러 처리
+  handleGameError(error) {
+    try {
+      console.error("게임 에러 처리 시작:", error);
+
+      // 게임이 일시정지된 상태라면 재개
+      if (this.gameController && this.gameController.gameState.isPaused) {
+        this.gameController.gameState.isPaused = false;
+        console.log("에러 복구: 게임 일시정지 해제");
+      }
+
+      // 게임 무결성 검사 및 복구
+      if (this.gameController) {
+        if (!this.gameController.checkGameIntegrity()) {
+          console.warn("게임 무결성 문제 발견, 복구 시도...");
+          this.gameController.recoverGame();
+        }
+      }
+
+      // 토스트 메시지 표시
+      if (this.toastUI) {
+        this.toastUI.show(
+          "게임 오류가 발생했습니다. 자동으로 복구를 시도합니다.",
+          "error"
+        );
+      }
+    } catch (recoveryError) {
+      console.error("에러 복구 중 추가 오류 발생:", recoveryError);
+    }
   }
 
   // 게임 상태 확인

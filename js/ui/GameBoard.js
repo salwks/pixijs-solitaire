@@ -192,15 +192,38 @@ export class GameBoard {
 
   // 화면 크기 변경 시 호출
   resize(width, height) {
-    this.screenWidth = width;
-    this.screenHeight = height;
-    this.scale = Math.min(width / 1024, height / 720);
+    try {
+      // 유효한 크기인지 확인
+      if (!width || !height || width < 800 || height < 600) {
+        console.warn("유효하지 않은 화면 크기:", width, height);
+        return;
+      }
 
-    // 기존 배경 제거
-    this.container.removeChildren();
+      console.log(`게임보드 리사이즈: ${width}x${height}`);
 
-    // 새로운 배경 설정
-    this.setupBackground();
+      this.screenWidth = width;
+      this.screenHeight = height;
+      this.scale = Math.min(width / 1024, height / 720);
+
+      // 스케일이 너무 작거나 큰 경우 제한
+      this.scale = Math.max(0.5, Math.min(this.scale, 2.0));
+
+      // 기존 배경 제거
+      if (this.container && this.container.children) {
+        this.container.removeChildren();
+      }
+
+      // 새로운 배경 설정
+      this.setupBackground();
+
+      console.log(`게임보드 리사이즈 완료. 스케일: ${this.scale}`);
+    } catch (error) {
+      console.error("게임보드 리사이즈 중 오류:", error);
+      // 에러 발생 시 기본값으로 복구
+      this.screenWidth = window.innerWidth;
+      this.screenHeight = window.innerHeight;
+      this.scale = Math.min(this.screenWidth / 1024, this.screenHeight / 720);
+    }
   }
 
   // 현재 스케일 반환

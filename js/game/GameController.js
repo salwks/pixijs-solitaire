@@ -48,6 +48,9 @@ export class GameController {
     // InputHandler에 GameController 참조 설정
     this.inputHandler.setGameController(this);
 
+    // Stock 클릭 이벤트 리스너 추가
+    this.setupStockClickListener();
+
     // 통계 로드
     this.gameState.loadStats();
 
@@ -55,11 +58,21 @@ export class GameController {
     this.scoreUI.updateAll();
     this.menuUI.init();
 
+    // 게임 모니터링 시작
+    this.startGameMonitoring();
+
     // 첫 게임 시작
     await this.newGame();
 
     this.isInitialized = true;
     console.log("게임 컨트롤러 초기화 완료");
+  }
+
+  // Stock 클릭 이벤트 리스너 설정
+  setupStockClickListener() {
+    window.addEventListener("cardstack_stockclicked", (event) => {
+      this.handleStockClick();
+    });
   }
 
   // 게임 스택들 생성
@@ -70,21 +83,19 @@ export class GameController {
     const globalScale = Math.min(screenWidth / 1024, screenHeight / 720);
 
     // Stock & Waste 스택
-    this.stockStack = new CardStack("stock", 0, globalScale, this);
-    this.wasteStack = new CardStack("waste", 0, globalScale, this);
+    this.stockStack = new CardStack("stock", 0, globalScale);
+    this.wasteStack = new CardStack("waste", 0, globalScale);
 
     // Foundation 스택들 (4개)
     this.foundationStacks = [];
     for (let i = 0; i < CONSTANTS.GAME.FOUNDATION_PILES; i++) {
-      this.foundationStacks.push(
-        new CardStack("foundation", i, globalScale, this)
-      );
+      this.foundationStacks.push(new CardStack("foundation", i, globalScale));
     }
 
     // Tableau 스택들 (7개)
     this.tableauStacks = [];
     for (let i = 0; i < CONSTANTS.GAME.TABLEAU_COLUMNS; i++) {
-      this.tableauStacks.push(new CardStack("tableau", i, globalScale, this));
+      this.tableauStacks.push(new CardStack("tableau", i, globalScale));
     }
 
     // 게임보드에 스택들 추가
@@ -129,6 +140,11 @@ export class GameController {
 
     // 힌트 초기화
     this.currentHint = null;
+
+    // 초기 게임 막힘 확인 및 해결
+    setTimeout(() => {
+      this.checkAndResolveGameBlock();
+    }, 1000);
 
     console.log("새 게임 시작 완료");
     this.dispatchGameStateChanged();
@@ -182,23 +198,109 @@ export class GameController {
 
   // 모든 스택들의 스케일 업데이트 (고정 스케일 사용)
   updateStacksScale(scale) {
-    // 고정 스케일 사용 - 리사이즈 시 스케일 변경하지 않음
-    console.log(`[updateStacksScale] 스케일 변경 요청 무시: ${scale}`);
+    try {
+      // 고정 스케일 사용 - 리사이즈 시 스케일 변경하지 않음
+      console.log(`[updateStacksScale] 스케일 변경 요청 무시: ${scale}`);
+
+      // 게임이 일시정지된 상태라면 재개
+      if (this.gameState.isPaused) {
+        this.gameState.isPaused = false;
+        console.log("게임 일시정지 해제");
+      }
+    } catch (error) {
+      console.error("스케일 업데이트 중 오류:", error);
+    }
+  }
+
+  // 게임 상태 안전성 검사
+  checkGameIntegrity() {
+    try {
+      if (!this.gameState || !this.gameState.isPlaying()) {
+        console.warn("게임 상태가 유효하지 않습니다.");
+        return false;
+      }
+
+      // 모든 스택이 유효한지 확인
+      const allStacks = this.getAllStacks();
+      for (const stack of allStacks) {
+        if (!stack || !stack.container) {
+          console.warn("유효하지 않은 스택 발견:", stack);
+          return false;
+        }
+      }
+
+      return true;
+    } catch (error) {
+      console.error("게임 무결성 검사 중 오류:", error);
+      return false;
+    }
+  }
+
+  // 게임 복구
+  recoverGame() {
+    try {
+      console.log("게임 복구 시도...");
+
+      // 게임 상태 재설정
+      if (this.gameState.isPaused) {
+        this.gameState.isPaused = false;
+      }
+
+      // 모든 스택 위치 재조정
+      this.repositionAllStacks();
+
+      console.log("게임 복구 완료");
+    } catch (error) {
+      console.error("게임 복구 중 오류:", error);
+    }
+  }
+
+  // 모든 스택 위치 재조정
+  repositionAllStacks() {
+    try {
+      const allStacks = this.getAllStacks();
+      allStacks.forEach((stack) => {
+        if (stack && stack.updatePosition) {
+          stack.updatePosition();
+        }
+      });
+    } catch (error) {
+      console.error("스택 위치 재조정 중 오류:", error);
+    }
   }
 
   // Stock 클릭 처리
   handleStockClick() {
     if (!this.gameState.isPlaying()) return;
 
+    // Stock 클릭 피드백
+    this.stockStack.onStockClick();
+
+    const wasStockEmpty = this.stockStack.isEmpty();
     const drawnCards = this.gameLogic.drawFromStock(
       this.stockStack,
       this.wasteStack
     );
 
     if (drawnCards.length > 0) {
-      // 카드 이동 애니메이션
-      this.animateStockDraw(drawnCards);
+      if (wasStockEmpty) {
+        // 재활용 애니메이션 (Waste에서 Stock으로)
+        this.animateStockRecycle(drawnCards);
+      } else {
+        // 일반 카드 뽑기 애니메이션
+        this.animateStockDraw(drawnCards);
+      }
+    } else {
+      // Stock과 Waste가 모두 비어있을 때 피드백
+      if (this.stockStack.isEmpty() && this.wasteStack.isEmpty()) {
+        if (this.toastUI) {
+          this.toastUI.showToast("더 이상 뽑을 카드가 없어요!", 5000);
+        }
+      }
     }
+
+    // 게임 막힘 확인 및 해결 시도
+    this.checkAndResolveGameBlock();
 
     this.dispatchGameStateChanged();
   }
@@ -211,6 +313,19 @@ export class GameController {
         card.container.x,
         card.container.y,
         CONSTANTS.ANIMATION.DURATION * 0.5
+      );
+    }
+  }
+
+  // Stock 재활용 애니메이션
+  async animateStockRecycle(cards) {
+    // 재활용된 카드들이 Stock으로 이동하는 애니메이션
+    for (const card of cards) {
+      await this.cardAnimation.animateCardMove(
+        card,
+        card.container.x,
+        card.container.y,
+        CONSTANTS.ANIMATION.DURATION * 0.3
       );
     }
   }
@@ -267,17 +382,6 @@ export class GameController {
 
   // 성공적인 이동 처리
   async onSuccessfulMove(card, toStack) {
-    // 자동으로 뒤집을 수 있는 카드 확인
-    const cardsToFlip = this.gameLogic.findCardsToFlip(this.tableauStacks);
-    for (const cardToFlip of cardsToFlip) {
-      await this.cardAnimation.animateCardFlip(cardToFlip, true);
-
-      this.gameState.recordMove({
-        type: "card_flip",
-        card: cardToFlip.toString(),
-      });
-    }
-
     // 점수 업데이트
     if (toStack.type === "foundation") {
       this.gameState.addToFoundation(card);
@@ -291,6 +395,22 @@ export class GameController {
     this.dispatchGameStateChanged();
   }
 
+  // 게임 막힘 확인 및 해결 (사용자에게 알림만)
+  checkAndResolveGameBlock() {
+    const allStacks = this.getAllStacks();
+
+    if (this.gameLogic.isGameBlocked(allStacks)) {
+      console.log("게임이 막혔습니다.");
+
+      if (this.toastUI) {
+        this.toastUI.showToast(
+          "게임이 막혔어요! 힌트를 사용하거나 새 게임을 시작해보세요.",
+          5000
+        );
+      }
+    }
+  }
+
   // 실패한 이동 처리
   async onFailedMove(card) {
     // 무효한 이동 애니메이션
@@ -300,6 +420,9 @@ export class GameController {
   // 게임 완료 처리
   async onGameComplete() {
     console.log("게임 완료!");
+
+    // 게임 모니터링 중지
+    this.stopGameMonitoring();
 
     // 승리 애니메이션
     await this.uiAnimation.animateVictory(this.foundationStacks);
@@ -355,8 +478,23 @@ export class GameController {
 
       if (bestMove.type === "draw_stock") {
         // Stock 클릭 힌트
-        const message = "💡 힌트: Stock을 클릭하여 카드를 뽑으세요.";
+        const message = "💡 힌트: 카드 뭉치를 클릭해서 카드를 뽑아보세요!";
         console.log("힌트: Stock을 클릭하여 카드를 뽑으세요.");
+
+        if (this.toastUI) {
+          this.toastUI.showToast(message, 5000);
+        }
+
+        // Stock 스택 하이라이트
+        this.stockStack.onDropZoneEnter();
+        setTimeout(() => {
+          this.stockStack.onDropZoneLeave();
+        }, 2000);
+      } else if (bestMove.type === "recycle_waste") {
+        // Waste 재활용 힌트
+        const message =
+          "💡 힌트: 카드 뭉치를 클릭해서 버린 카드들을 다시 사용해보세요!";
+        console.log("힌트: Stock을 클릭하여 Waste를 재활용하세요.");
 
         if (this.toastUI) {
           this.toastUI.showToast(message, 5000);
@@ -370,9 +508,18 @@ export class GameController {
       } else if (bestMove.card) {
         // 카드 이동 힌트
         this.cardAnimation.animateHint(bestMove.card);
-        const message = `💡 힌트: ${bestMove.card.toString()}를 ${
-          bestMove.toStack?.type || ""
-        }로 이동하세요.`;
+
+        // 친근한 메시지로 변환
+        let targetName = "";
+        if (bestMove.toStack?.type === "foundation") {
+          targetName = "위쪽 정리 영역";
+        } else if (bestMove.toStack?.type === "tableau") {
+          targetName = "아래쪽 카드 줄";
+        } else if (bestMove.toStack?.type === "waste") {
+          targetName = "버린 카드 영역";
+        }
+
+        const message = `💡 힌트: ${bestMove.card.toString()}를 ${targetName}으로 옮겨보세요!`;
         console.log(message);
 
         if (this.toastUI) {
@@ -380,7 +527,9 @@ export class GameController {
         }
       }
     } else {
-      const message = "💡 사용 가능한 힌트가 없습니다.";
+      // 힌트가 없을 때 (게임 막힘)
+      const message =
+        "💡 지금은 할 수 있는 이동이 없어요. 카드 뭉치를 클릭해보세요!";
       console.log("사용 가능한 힌트가 없습니다.");
 
       if (this.toastUI) {
@@ -489,20 +638,37 @@ export class GameController {
 
   // 메모리 정리
   destroy() {
-    // 게임 정리
-    this.clearGame();
+    // 게임 모니터링 중지
+    this.stopGameMonitoring();
 
-    // 시스템들 정리
-    if (this.inputHandler) this.inputHandler.destroy();
-    if (this.cardAnimation) this.cardAnimation.destroy();
-    if (this.uiAnimation) this.uiAnimation.destroy();
-    if (this.scoreUI) this.scoreUI.destroy();
-    if (this.menuUI) this.menuUI.destroy();
+    if (this.inputHandler) {
+      this.inputHandler.destroy();
+    }
 
-    // 스택들 정리
-    this.getAllStacks().forEach((stack) => stack.destroy());
+    if (this.cardAnimation) {
+      this.cardAnimation.destroy();
+    }
 
-    console.log("게임 컨트롤러가 정리되었습니다.");
+    if (this.uiAnimation) {
+      this.uiAnimation.destroy();
+    }
+
+    if (this.scoreUI) {
+      this.scoreUI.destroy();
+    }
+
+    if (this.menuUI) {
+      this.menuUI.destroy();
+    }
+
+    // 게임 스택들 정리
+    this.getAllStacks().forEach((stack) => {
+      if (stack && stack.destroy) {
+        stack.destroy();
+      }
+    });
+
+    console.log("게임 컨트롤러 정리 완료");
   }
 
   // 토스트 UI 설정
@@ -632,6 +798,28 @@ export class GameController {
       console.log("저장된 카드 상태가 삭제되었습니다.");
     } catch (error) {
       console.error("카드 상태 삭제 실패:", error);
+    }
+  }
+
+  // 주기적 게임 상태 확인 (게임 막힘 방지)
+  startGameMonitoring() {
+    // 10초마다 게임 상태만 확인 (자동 해결 없음)
+    this.gameMonitorInterval = setInterval(() => {
+      if (this.gameState.isPlaying()) {
+        // 게임 상태 확인만 (자동 해결 없음)
+        const isBlocked = this.gameLogic.isGameBlocked(this.getAllStacks());
+        if (isBlocked) {
+          console.log("게임이 막혔습니다. 사용자가 직접 해결해야 합니다.");
+        }
+      }
+    }, 10000);
+  }
+
+  // 게임 모니터링 중지
+  stopGameMonitoring() {
+    if (this.gameMonitorInterval) {
+      clearInterval(this.gameMonitorInterval);
+      this.gameMonitorInterval = null;
     }
   }
 }

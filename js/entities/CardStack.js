@@ -4,12 +4,13 @@ import { CONSTANTS } from "../core/Constants.js";
 import { Utils } from "../utils/Utils.js";
 
 export class CardStack {
-  constructor(type, index = 0, scale = 1, gameController = null) {
+  constructor(type, index = 0, scale = 1) {
     this.type = type; // 'stock', 'waste', 'foundation', 'tableau'
     this.index = index; // foundation이나 tableau의 인덱스
     this.scale = scale;
-    this.gameController = gameController;
     this.cards = [];
+    this.originalScale = type === "stock" ? 1 : scale;
+    this.isClickAnimating = false; // 클릭 애니메이션 상태
     this.container = new PIXI.Container();
     this.dropZoneAnimation = null;
 
@@ -21,16 +22,9 @@ export class CardStack {
     // 드롭존 설정
     this.setupDropZone();
 
-    // Stock 타입일 때 카드가 없어도 클릭 가능하도록 추가 이벤트 리스너
+    // Stock 스택에 클릭 이벤트 추가
     if (this.type === "stock") {
-      this.container.interactive = true;
-      this.container.cursor = "pointer";
-      this.container.on("pointerdown", (event) => {
-        // Stock 클릭 시 GameController의 handleStockClick 호출
-        if (this.gameController) {
-          this.gameController.handleStockClick();
-        }
-      });
+      this.setupStockClick();
     }
   }
 
@@ -57,6 +51,65 @@ export class CardStack {
     this.dropZone.on("pointerout", this.onDropZoneLeave.bind(this));
 
     this.container.addChild(this.dropZone);
+  }
+
+  // Stock 클릭 이벤트 설정
+  setupStockClick() {
+    this.container.interactive = true;
+    this.container.cursor = "pointer";
+
+    this.container.on("pointerdown", (event) => {
+      // Stock 클릭 이벤트 발생
+      this.dispatchEvent("stockclicked", { event });
+    });
+
+    // 빈 Stock 표시 그래픽 생성
+    this.createEmptyStockDisplay();
+  }
+
+  // 빈 Stock 표시 그래픽 생성
+  createEmptyStockDisplay() {
+    const cardWidth = CONSTANTS.CARD_WIDTH * CONSTANTS.CARD_SCALE * this.scale;
+    const cardHeight =
+      CONSTANTS.CARD_HEIGHT * CONSTANTS.CARD_SCALE * this.scale;
+
+    // 빈 카드 배경
+    this.emptyStockGraphic = new PIXI.Graphics();
+    this.emptyStockGraphic.beginFill(0x2c3e50, 0.3);
+    this.emptyStockGraphic.lineStyle(2, 0x34495e, 0.8);
+    this.emptyStockGraphic.drawRoundedRect(0, 0, cardWidth, cardHeight, 6);
+    this.emptyStockGraphic.endFill();
+
+    // "덱" 텍스트
+    const deckText = new PIXI.Text("덱", {
+      fontFamily: "Arial, sans-serif",
+      fontSize: Math.max(12, Math.floor(14 * this.scale)),
+      fill: 0x95a5a6,
+      fontWeight: "bold",
+    });
+    deckText.anchor.set(0.5, 0.5);
+    deckText.x = cardWidth / 2;
+    deckText.y = cardHeight / 2;
+    this.emptyStockGraphic.addChild(deckText);
+
+    this.container.addChild(this.emptyStockGraphic);
+    this.updateEmptyStockVisibility();
+  }
+
+  // 빈 Stock 표시 업데이트
+  updateEmptyStockVisibility() {
+    if (this.emptyStockGraphic) {
+      this.emptyStockGraphic.visible = this.isEmpty();
+    }
+  }
+
+  // 이벤트 디스패치
+  dispatchEvent(eventType, data) {
+    // 커스텀 이벤트 발생
+    const customEvent = new CustomEvent(`cardstack_${eventType}`, {
+      detail: { stack: this, ...data },
+    });
+    window.dispatchEvent(customEvent);
   }
 
   // 카드 추가
@@ -94,6 +147,11 @@ export class CardStack {
     // Tableau의 경우 드롭존 크기 업데이트
     if (this.type === "tableau") {
       this.updateDropZoneSize();
+    }
+
+    // Stock의 빈 상태 표시 업데이트
+    if (this.type === "stock") {
+      this.updateEmptyStockVisibility();
     }
 
     console.log(`카드 ${card.toString()}가 ${this.type} 스택에 추가됨`);
@@ -150,6 +208,11 @@ export class CardStack {
       // Tableau의 경우 드롭존 크기 업데이트
       if (this.type === "tableau") {
         this.updateDropZoneSize();
+      }
+
+      // Stock의 빈 상태 표시 업데이트
+      if (this.type === "stock") {
+        this.updateEmptyStockVisibility();
       }
 
       console.log(`카드 ${card.toString()}가 ${this.type} 스택에서 제거됨`);
@@ -495,7 +558,96 @@ export class CardStack {
 
   // 스케일 설정 (고정 스케일 사용)
   setScale(scale) {
-    // 고정 스케일 사용 - 리사이즈 시 스케일 변경하지 않음
-    console.log(`[setScale] 스케일 변경 요청 무시: ${scale}`);
+    this.scale = scale;
+    // Stock의 originalScale은 항상 1로 고정
+    if (this.type !== "stock") {
+      this.originalScale = scale;
+    }
+    this.updatePosition();
+  }
+
+  // 스택 위치 업데이트 (리사이즈 시 호출)
+  updatePosition() {
+    try {
+      // 새로운 위치 계산
+      this.position = Utils.getStackPosition(this.type, this.index, this.scale);
+
+      // 컨테이너 위치 업데이트
+      if (this.container) {
+        this.container.x = this.position.x;
+        this.container.y = this.position.y;
+      }
+
+      // 드롭존 크기 업데이트
+      if (this.dropZone) {
+        const cardWidth =
+          CONSTANTS.CARD_WIDTH * CONSTANTS.CARD_SCALE * this.scale;
+        const cardHeight =
+          CONSTANTS.CARD_HEIGHT * CONSTANTS.CARD_SCALE * this.scale;
+
+        this.dropZone.clear();
+        if (this.type === "tableau") {
+          // Tableau의 경우 카드 그룹의 전체 길이로 설정
+          const totalHeight =
+            this.cards.length > 0
+              ? cardHeight +
+                (this.cards.length - 1) * CONSTANTS.CARD_OVERLAP * this.scale
+              : cardHeight;
+          this.dropZone.rect(0, 0, cardWidth, totalHeight);
+        } else {
+          this.dropZone.rect(0, 0, cardWidth, cardHeight);
+        }
+        this.dropZone.fill({ color: 0x000000, alpha: 0 });
+      }
+
+      // 빈 Stock 그래픽 업데이트
+      if (this.type === "stock" && this.emptyStockGraphic) {
+        const cardWidth =
+          CONSTANTS.CARD_WIDTH * CONSTANTS.CARD_SCALE * this.scale;
+        const cardHeight =
+          CONSTANTS.CARD_HEIGHT * CONSTANTS.CARD_SCALE * this.scale;
+
+        this.emptyStockGraphic.clear();
+        this.emptyStockGraphic.beginFill(0x2c3e50, 0.3);
+        this.emptyStockGraphic.lineStyle(2, 0x34495e, 0.8);
+        this.emptyStockGraphic.drawRoundedRect(0, 0, cardWidth, cardHeight, 6);
+        this.emptyStockGraphic.endFill();
+
+        // 텍스트 크기도 업데이트
+        const deckText = this.emptyStockGraphic.children[0];
+        if (deckText && deckText instanceof PIXI.Text) {
+          deckText.style.fontSize = Math.max(12, Math.floor(14 * this.scale));
+          deckText.x = cardWidth / 2;
+          deckText.y = cardHeight / 2;
+        }
+      }
+
+      // 모든 카드 위치 업데이트
+      this.updateAllCardPositions();
+
+      console.log(
+        `${this.type} 스택 위치 업데이트 완료: (${this.position.x}, ${this.position.y})`
+      );
+    } catch (error) {
+      console.error(`${this.type} 스택 위치 업데이트 중 오류:`, error);
+    }
+  }
+
+  // Stock 클릭 피드백
+  onStockClick() {
+    if (this.type !== "stock" || this.isClickAnimating) return;
+
+    this.isClickAnimating = true;
+
+    // 클릭 효과 애니메이션 - 항상 1→0.95→1로 고정
+    this.container.scale.set(0.95);
+
+    setTimeout(() => {
+      this.container.scale.set(1);
+      this.isClickAnimating = false;
+    }, 150);
+
+    // 클릭 사운드나 시각적 효과 추가 가능
+    console.log("Stock 클릭됨");
   }
 }

@@ -175,6 +175,42 @@ export class GameLogic {
     return cardsToFlip;
   }
 
+  // 자동 카드 뒤집기 실행
+  executeCardFlip(card) {
+    if (!card || card.faceUp) return false;
+
+    card.flip(true);
+
+    // 이동 기록
+    this.gameState.recordMove({
+      type: "card_flip",
+      card: card.toString(),
+      stack: card.currentStack.type,
+      stackIndex: card.currentStack.index || 0,
+    });
+
+    console.log(`카드 ${card.toString()}가 뒤집혔습니다.`);
+    return true;
+  }
+
+  // 자동으로 뒤집을 수 있는 모든 카드 뒤집기
+  executeAllCardFlips(tableauStacks) {
+    const cardsToFlip = this.findCardsToFlip(tableauStacks);
+    let flippedCount = 0;
+
+    cardsToFlip.forEach((card) => {
+      if (this.executeCardFlip(card)) {
+        flippedCount++;
+      }
+    });
+
+    if (flippedCount > 0) {
+      console.log(`${flippedCount}장의 카드가 자동으로 뒤집혔습니다.`);
+    }
+
+    return flippedCount;
+  }
+
   // 자동 완성 가능한 카드들 찾기
   findAutoCompletableCards(allStacks) {
     const completableCards = [];
@@ -271,7 +307,7 @@ export class GameLogic {
     return totalCards === CONSTANTS.GAME.TOTAL_CARDS;
   }
 
-  // 최적의 이동 제안
+  // 최적의 이동 제안 (게임 막힘 방지)
   suggestBestMove(allStacks) {
     const hints = this.findHints(allStacks);
 
@@ -288,23 +324,108 @@ export class GameLogic {
         };
       }
 
+      // Waste 재활용 제안
+      if (wasteStack && !wasteStack.isEmpty()) {
+        return {
+          type: "recycle_waste",
+          fromStack: wasteStack,
+          toStack: stockStack,
+        };
+      }
+
+      // 정말로 할 수 있는 것이 없으면 null 반환
       return null;
     }
 
-    // 우선순위: Foundation > 카드 뒤집기 > Tableau 이동
+    // 게임 막힘 방지를 위한 스마트 우선순위
+    return this.getSmartMovePriority(hints, allStacks);
+  }
+
+  // 스마트 이동 우선순위 결정 (게임 막힘 방지)
+  getSmartMovePriority(hints, allStacks) {
+    // 1. Foundation으로의 이동 (가장 높은 우선순위)
     const foundationMoves = hints.filter(
       (h) => h.toStack?.type === "foundation"
     );
     if (foundationMoves.length > 0) {
+      // Ace나 2를 우선적으로 Foundation으로
+      const aceOrTwoMoves = foundationMoves.filter(
+        (h) => h.card.getValue() <= 2
+      );
+      if (aceOrTwoMoves.length > 0) {
+        return aceOrTwoMoves[0];
+      }
       return foundationMoves[0];
     }
 
+    // 2. 카드 뒤집기 (게임 진행을 위해 중요)
     const flipMoves = hints.filter((h) => h.type === "flip");
     if (flipMoves.length > 0) {
       return flipMoves[0];
     }
 
+    // 3. Tableau 이동 (게임 막힘 방지 우선순위)
+    const tableauMoves = hints.filter((h) => h.toStack?.type === "tableau");
+    if (tableauMoves.length > 0) {
+      // 빈 Tableau로의 이동을 우선시 (King 이동)
+      const emptyTableauMoves = tableauMoves.filter(
+        (h) => h.toStack.cards.length === 0
+      );
+      if (emptyTableauMoves.length > 0) {
+        return emptyTableauMoves[0];
+      }
+
+      // 막힌 카드를 해결하는 이동 우선
+      const unblockingMoves = this.findUnblockingMoves(tableauMoves, allStacks);
+      if (unblockingMoves.length > 0) {
+        return unblockingMoves[0];
+      }
+
+      return tableauMoves[0];
+    }
+
     return hints[0];
+  }
+
+  // 막힌 카드를 해결하는 이동 찾기
+  findUnblockingMoves(tableauMoves, allStacks) {
+    const tableauStacks = allStacks.filter((s) => s.type === "tableau");
+    const unblockingMoves = [];
+
+    tableauMoves.forEach((move) => {
+      const fromStack = move.fromStack;
+      const toStack = move.toStack;
+
+      // 이동 후 뒤집을 수 있는 카드가 생기는지 확인
+      const wouldUnblock = this.wouldUnblockCards(
+        fromStack,
+        toStack,
+        move.card
+      );
+      if (wouldUnblock) {
+        unblockingMoves.push(move);
+      }
+    });
+
+    return unblockingMoves;
+  }
+
+  // 이동이 카드를 막힘 해결하는지 확인
+  wouldUnblockCards(fromStack, toStack, movingCard) {
+    // 이동 후 fromStack의 맨 위 카드가 뒤집힐 수 있는지 확인
+    if (fromStack.type === "tableau") {
+      const remainingCards = fromStack.cards.filter(
+        (card) => card !== movingCard
+      );
+      if (remainingCards.length > 0) {
+        const topCard = remainingCards[remainingCards.length - 1];
+        if (!topCard.faceUp) {
+          return true; // 뒷면 카드가 뒤집힐 수 있음
+        }
+      }
+    }
+
+    return false;
   }
 
   // 단일 카드 이동 실행
@@ -486,5 +607,116 @@ export class GameLogic {
     analysis.possibleMoves = this.findHints(allStacks).length;
 
     return analysis;
+  }
+
+  // 게임이 막혔는지 확인
+  isGameBlocked(allStacks) {
+    const hints = this.findHints(allStacks);
+    const stockStack = allStacks.find((s) => s.type === "stock");
+    const wasteStack = allStacks.find((s) => s.type === "waste");
+
+    // Stock에서 뽑을 수 있는 카드가 있는지 확인
+    const canDrawFromStock = stockStack && !stockStack.isEmpty();
+
+    // Waste에서 뽑을 수 있는 카드가 있는지 확인
+    const canDrawFromWaste = wasteStack && !wasteStack.isEmpty();
+
+    // 가능한 이동이 없고, Stock에서도 뽑을 수 없으면 게임 막힘
+    return hints.length === 0 && !canDrawFromStock && !canDrawFromWaste;
+  }
+
+  // 게임 막힘 해결 시도
+  tryUnblockGame(allStacks) {
+    console.log("게임 막힘 해결 시도 중...");
+
+    // 1. 자동 카드 뒤집기 시도
+    const tableauStacks = allStacks.filter((s) => s.type === "tableau");
+    const flippedCount = this.executeAllCardFlips(tableauStacks);
+
+    if (flippedCount > 0) {
+      console.log("카드 뒤집기로 게임이 해결되었습니다.");
+      return true;
+    }
+
+    // 2. Stock에서 카드 뽑기 시도
+    const stockStack = allStacks.find((s) => s.type === "stock");
+    const wasteStack = allStacks.find((s) => s.type === "waste");
+
+    if (stockStack && !stockStack.isEmpty()) {
+      const drawnCards = this.drawFromStock(stockStack, wasteStack);
+      if (drawnCards.length > 0) {
+        console.log("Stock에서 카드를 뽑아 게임이 해결되었습니다.");
+        return true;
+      }
+    }
+
+    // 3. Waste 재활용 시도
+    if (wasteStack && !wasteStack.isEmpty()) {
+      const recycledCards = this.recycleWasteToStock(stockStack, wasteStack);
+      if (recycledCards.length > 0) {
+        console.log("Waste 재활용으로 게임이 해결되었습니다.");
+        return true;
+      }
+    }
+
+    console.log("게임 막힘을 해결할 수 없습니다.");
+    return false;
+  }
+
+  // 예방적 게임 막힘 해결 (게임 진행 중 주기적으로 호출)
+  preventGameBlock(allStacks) {
+    const tableauStacks = allStacks.filter((s) => s.type === "tableau");
+
+    // 1. 자동 카드 뒤집기
+    const flippedCount = this.executeAllCardFlips(tableauStacks);
+
+    // 2. 막힌 카드가 있는지 확인하고 해결 시도
+    const blockedCards = this.findBlockedCards(tableauStacks);
+    if (blockedCards.length > 0) {
+      console.log(`${blockedCards.length}장의 막힌 카드 발견`);
+      this.tryUnblockSpecificCards(blockedCards, allStacks);
+    }
+
+    return flippedCount > 0 || blockedCards.length > 0;
+  }
+
+  // 막힌 카드들 찾기
+  findBlockedCards(tableauStacks) {
+    const blockedCards = [];
+
+    tableauStacks.forEach((stack) => {
+      stack.cards.forEach((card, index) => {
+        if (!card.faceUp && index < stack.cards.length - 1) {
+          // 뒷면 카드이고 맨 위가 아니면 막힌 상태
+          blockedCards.push({
+            card: card,
+            stack: stack,
+            index: index,
+          });
+        }
+      });
+    });
+
+    return blockedCards;
+  }
+
+  // 특정 막힌 카드들 해결 시도
+  tryUnblockSpecificCards(blockedCards, allStacks) {
+    const tableauStacks = allStacks.filter((s) => s.type === "tableau");
+
+    blockedCards.forEach(({ card, stack }) => {
+      // 이 카드를 다른 곳으로 이동시킬 수 있는지 확인
+      tableauStacks.forEach((targetStack) => {
+        if (targetStack !== stack) {
+          const cardsToMove = stack.getCardsFromIndex(
+            stack.cards.indexOf(card)
+          );
+          if (this.validateMultiCardMove(cardsToMove, stack, targetStack)) {
+            console.log(`막힌 카드 ${card.toString()} 해결 시도`);
+            this.executeMultiCardMove(cardsToMove, stack, targetStack);
+          }
+        }
+      });
+    });
   }
 }

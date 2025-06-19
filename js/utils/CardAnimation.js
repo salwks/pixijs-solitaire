@@ -201,32 +201,90 @@ export class CardAnimation {
     }
   }
 
-  // 힌트 애니메이션
+  // 카드 딜링 애니메이션 (순차적으로 배치)
+  animateCardDeal(
+    cards,
+    positions,
+    dealDelay = CONSTANTS.ANIMATION.DEAL_DELAY
+  ) {
+    return new Promise(async (resolve) => {
+      for (let i = 0; i < cards.length; i++) {
+        const card = cards[i];
+        const position = positions[i];
+
+        // 동시에 이동과 뒤집기
+        const movePromise = this.animateCardMove(
+          card,
+          position.x,
+          position.y,
+          CONSTANTS.ANIMATION.DURATION
+        );
+
+        const flipPromise =
+          position.faceUp !== undefined
+            ? this.animateCardFlip(card, position.faceUp)
+            : Promise.resolve();
+
+        // 다음 카드까지 대기
+        if (i < cards.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, dealDelay * 1000));
+        }
+
+        // 마지막 카드의 애니메이션 완료까지 대기
+        if (i === cards.length - 1) {
+          await Promise.all([movePromise, flipPromise]);
+        }
+      }
+      resolve();
+    });
+  }
+
+  // 자동 완성 애니메이션 (Foundation으로 순차 이동)
+  animateAutoComplete(cards, foundationPositions) {
+    return new Promise(async (resolve) => {
+      for (const card of cards) {
+        const targetPos = foundationPositions[card.suit];
+
+        // 카드를 Foundation으로 이동
+        await this.animateCardMove(
+          card,
+          targetPos.x,
+          targetPos.y,
+          CONSTANTS.ANIMATION.AUTO_MOVE_DURATION
+        );
+
+        // 약간의 지연
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      resolve();
+    });
+  }
+
+  // 힌트 애니메이션 (카드 강조)
   animateHint(card, duration = 1000) {
     return new Promise((resolve) => {
       const animId = ++this.animationId;
       const startTime = Date.now();
-      const originalScale = card.container.scale.x;
+      const originalY = card.container.y;
 
       const animate = () => {
         const elapsed = Date.now() - startTime;
         const progress = Math.min(elapsed / duration, 1);
 
-        // 깜빡이는 효과
-        const blink = Math.sin(progress * Math.PI * 8) * 0.3 + 0.7;
-        card.container.alpha = blink;
+        // 위아래로 부드럽게 움직이는 효과
+        const bounce = Math.sin(elapsed * 0.008) * 10;
+        card.container.y = originalY + bounce;
 
-        // 크기 변화
-        const scale =
-          originalScale * (1 + Math.sin(progress * Math.PI * 4) * 0.1);
-        card.container.scale.set(scale);
+        // 빛나는 효과
+        const glow = Math.sin(elapsed * 0.01) * 0.3 + 0.7;
+        card.container.tint = 0xffffff * glow + 0xffff00 * (1 - glow);
 
         if (progress < 1) {
           this.app.ticker.addOnce(animate);
         } else {
-          // 원래 상태로 복구
-          card.container.alpha = 1;
-          card.container.scale.set(originalScale);
+          // 애니메이션 완료
+          card.container.y = originalY;
+          card.container.tint = 0xffffff;
           this.activeAnimations.delete(animId);
           resolve();
         }
@@ -237,28 +295,136 @@ export class CardAnimation {
     });
   }
 
-  // 잘못된 이동 애니메이션
+  // 드래그 시작 애니메이션 (카드 들어올리기)
+  animateDragStart(cards) {
+    const promises = cards.map((card) => {
+      const targetY = card.container.y - 10; // 10픽셀 위로
+      return this.animateCardMove(
+        card,
+        card.container.x,
+        targetY,
+        0.1 // 빠른 애니메이션
+      );
+    });
+
+    return Promise.all(promises);
+  }
+
+  // 드래그 종료 애니메이션 (카드 내려놓기)
+  animateDragEnd(cards, positions) {
+    const promises = cards.map((card, index) => {
+      const pos = positions[index];
+      return this.animateCardMove(
+        card,
+        pos.x,
+        pos.y,
+        0.2 // 부드러운 착지
+      );
+    });
+
+    return Promise.all(promises);
+  }
+
+  // 무효한 이동 애니메이션 (흔들기)
   animateInvalidMove(card) {
     return new Promise((resolve) => {
       const animId = ++this.animationId;
       const startTime = Date.now();
+      const duration = 500;
       const originalX = card.container.x;
-      const originalY = card.container.y;
 
       const animate = () => {
         const elapsed = Date.now() - startTime;
-        const progress = Math.min(elapsed / 300, 1);
+        const progress = Math.min(elapsed / duration, 1);
 
-        // 흔들리는 효과
-        const shake = Math.sin(progress * Math.PI * 10) * 5 * (1 - progress);
+        // 좌우로 흔들기
+        const shake = Math.sin(elapsed * 0.03) * 5 * (1 - progress);
         card.container.x = originalX + shake;
+
+        // 빨간색 틴트
+        const redTint = Math.sin(elapsed * 0.02) * 0.5 + 0.5;
+        card.container.tint =
+          0xffffff * (1 - redTint * 0.5) + 0xff0000 * redTint;
 
         if (progress < 1) {
           this.app.ticker.addOnce(animate);
         } else {
-          // 원래 위치로 복구
+          // 애니메이션 완료
           card.container.x = originalX;
-          card.container.y = originalY;
+          card.container.tint = 0xffffff;
+          this.activeAnimations.delete(animId);
+          resolve();
+        }
+      };
+
+      this.activeAnimations.set(animId, { card, animate });
+      animate();
+    });
+  }
+
+  // 카드 그룹 이동 애니메이션
+  animateCardGroup(
+    cards,
+    targetPositions,
+    duration = CONSTANTS.ANIMATION.DURATION
+  ) {
+    const promises = cards.map((card, index) => {
+      const targetPos = targetPositions[index];
+      return this.animateCardMove(card, targetPos.x, targetPos.y, duration);
+    });
+
+    return Promise.all(promises);
+  }
+
+  // 카드 페이드 인/아웃
+  animateCardFade(card, fadeIn = true, duration = 0.3) {
+    return new Promise((resolve) => {
+      const animId = ++this.animationId;
+      const startTime = Date.now();
+      const startAlpha = fadeIn ? 0 : 1;
+      const endAlpha = fadeIn ? 1 : 0;
+
+      card.container.alpha = startAlpha;
+
+      const animate = () => {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(elapsed / (duration * 1000), 1);
+
+        card.container.alpha = Utils.lerp(startAlpha, endAlpha, progress);
+
+        if (progress < 1) {
+          this.app.ticker.addOnce(animate);
+        } else {
+          card.container.alpha = endAlpha;
+          this.activeAnimations.delete(animId);
+          resolve();
+        }
+      };
+
+      this.activeAnimations.set(animId, { card, animate });
+      animate();
+    });
+  }
+
+  // 카드 스케일 애니메이션
+  animateCardScale(card, targetScale, duration = 0.3) {
+    return new Promise((resolve) => {
+      const animId = ++this.animationId;
+      const startTime = Date.now();
+      const startScale = card.container.scale.x;
+
+      const animate = () => {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(elapsed / (duration * 1000), 1);
+        const easedProgress = Utils.easeInOut(progress);
+
+        const currentScale = Utils.lerp(startScale, targetScale, easedProgress);
+        card.container.scale.set(currentScale);
+
+        if (progress < 1) {
+          this.app.ticker.addOnce(animate);
+        } else {
+          card.container.scale.set(targetScale);
           this.activeAnimations.delete(animId);
           resolve();
         }
@@ -271,62 +437,82 @@ export class CardAnimation {
 
   // 모든 애니메이션 중지
   stopAllAnimations() {
-    this.activeAnimations.forEach((animation) => {
-      if (animation.card && animation.card.container) {
-        animation.card.container.alpha = 1;
-        animation.card.container.scale.set(CONSTANTS.CARD_SCALE);
-        animation.card.container.rotation = 0;
+    this.activeAnimations.forEach(({ card, cards }) => {
+      if (card) {
+        card.container.scale.set(CONSTANTS.CARD_SCALE);
+        card.container.tint = 0xffffff;
+        card.container.alpha = 1.0;
+        card.container.rotation = 0;
+      }
+      if (cards) {
+        cards.forEach((c) => {
+          c.container.scale.set(CONSTANTS.CARD_SCALE);
+          c.container.tint = 0xffffff;
+          c.container.alpha = 1.0;
+          c.container.rotation = 0;
+        });
       }
     });
+
     this.activeAnimations.clear();
+    console.log("모든 카드 애니메이션이 중지되었습니다.");
   }
 
   // 특정 카드의 애니메이션 중지
   stopCardAnimation(card) {
-    this.activeAnimations.forEach((animation, id) => {
-      if (animation.card === card) {
-        if (card.container) {
-          card.container.alpha = 1;
-          card.container.scale.set(CONSTANTS.CARD_SCALE);
-          card.container.rotation = 0;
-        }
-        this.activeAnimations.delete(id);
+    for (const [animId, animation] of this.activeAnimations.entries()) {
+      if (
+        animation.card === card ||
+        (animation.cards && animation.cards.includes(card))
+      ) {
+        // 애니메이션 중지 및 정리
+        card.container.scale.set(CONSTANTS.CARD_SCALE);
+        card.container.tint = 0xffffff;
+        card.container.alpha = 1.0;
+        card.container.rotation = 0;
+
+        this.activeAnimations.delete(animId);
+        break;
       }
-    });
+    }
   }
 
-  // 활성 애니메이션 개수 반환
+  // 진행 중인 애니메이션 수
   getActiveAnimationCount() {
     return this.activeAnimations.size;
   }
 
-  // 카드가 애니메이션 중인지 확인
+  // 특정 카드의 애니메이션이 진행 중인지 확인
   isCardAnimating(card) {
     for (const animation of this.activeAnimations.values()) {
-      if (animation.card === card) {
+      if (
+        animation.card === card ||
+        (animation.cards && animation.cards.includes(card))
+      ) {
         return true;
       }
     }
     return false;
   }
 
-  // 모든 애니메이션 완료 대기
+  // 모든 애니메이션이 완료될 때까지 대기
   waitForAllAnimations() {
     return new Promise((resolve) => {
       const checkAnimations = () => {
         if (this.activeAnimations.size === 0) {
           resolve();
         } else {
-          this.app.ticker.addOnce(checkAnimations);
+          setTimeout(checkAnimations, 50);
         }
       };
       checkAnimations();
     });
   }
 
-  // 리소스 정리
+  // 메모리 정리
   destroy() {
     this.stopAllAnimations();
     this.activeAnimations.clear();
+    console.log("카드 애니메이션 시스템이 정리되었습니다.");
   }
 }

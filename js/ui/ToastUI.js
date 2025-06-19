@@ -75,16 +75,16 @@ export class ToastUI {
     };
     animate();
 
-    // 자동 숨김 타이머
+    // 자동 숨김 타이머 (5초)
     this.hideTimeout = setTimeout(() => {
       this.hideToast();
-    }, duration);
+    }, 5000);
   }
 
   // 토스트 숨기기
   hideToast() {
     if (this.currentToast && this.isVisible && this.currentToast.parent) {
-      // 위에서 아래로 슬라이드 아웃 애니메이션
+      // 아래로 슬라이드 아웃 애니메이션 (나온 방향 반대로)
       const animate = () => {
         if (this.currentToast && this.currentToast.y < this.screenHeight) {
           this.currentToast.y += 10;
