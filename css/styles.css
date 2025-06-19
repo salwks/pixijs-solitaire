@@ -1,0 +1,328 @@
+/* PixiJS 솔리테어 - 개선된 스타일 시트 */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: radial-gradient(
+      circle at 30% 20%,
+      rgba(26, 107, 84, 0.8) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      circle at 80% 70%,
+      rgba(15, 76, 58, 0.8) 0%,
+      transparent 50%
+    ),
+    linear-gradient(135deg, #0f4c3a 0%, #1a6b54 30%, #2e7d68 60%, #0f4c3a 100%);
+  font-family: "Segoe UI", "Arial", sans-serif;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  position: relative;
+}
+
+/* 배경 패턴 추가 */
+body::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: radial-gradient(
+      circle at 25% 25%,
+      rgba(255, 255, 255, 0.1) 2px,
+      transparent 2px
+    ),
+    radial-gradient(
+      circle at 75% 75%,
+      rgba(255, 255, 255, 0.05) 1px,
+      transparent 1px
+    );
+  background-size: 60px 60px, 30px 30px;
+  pointer-events: none;
+  z-index: -1;
+}
+
+#gameContainer {
+  position: relative;
+  border: 4px solid #8b4513;
+  border-radius: 16px;
+  box-shadow: 0 0 0 2px rgba(139, 69, 19, 0.3), 0 8px 32px rgba(0, 0, 0, 0.4),
+    inset 0 2px 4px rgba(255, 255, 255, 0.1);
+  background: linear-gradient(
+      145deg,
+      rgba(15, 76, 58, 0.9),
+      rgba(26, 107, 84, 0.9)
+    ),
+    radial-gradient(
+      circle at center,
+      rgba(255, 255, 255, 0.05) 0%,
+      transparent 70%
+    );
+  backdrop-filter: blur(10px);
+}
+
+#gameCanvas {
+  display: block;
+  border-radius: 12px;
+}
+
+/* 개선된 로딩 화면 */
+.loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-size: 24px;
+  text-align: center;
+  z-index: 200;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
+}
+
+.loading::after {
+  content: "";
+  display: block;
+  width: 40px;
+  height: 40px;
+  margin: 20px auto;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 게임 정보 오버레이 개선 */
+.ui-overlay {
+  position: absolute;
+  top: 15px;
+  left: 15px;
+  color: white;
+  font-weight: 600;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8), 0 0 10px rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  font-size: 16px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 12px 16px;
+  border-radius: 10px;
+  backdrop-filter: blur(5px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.ui-overlay div {
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+}
+
+.ui-overlay div:last-child {
+  margin-bottom: 0;
+}
+
+.ui-overlay span {
+  font-weight: 700;
+  color: #ffd700;
+  margin-left: 8px;
+  font-size: 18px;
+}
+
+/* 컨트롤 버튼들 개선 */
+.controls {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  z-index: 100;
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  background: linear-gradient(145deg, #4a90e2, #357abd);
+  border: none;
+  color: white;
+  padding: 10px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  box-shadow: 0 4px 12px rgba(74, 144, 226, 0.3),
+    inset 0 1px 2px rgba(255, 255, 255, 0.2);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.2),
+    transparent
+  );
+  transition: left 0.5s;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(74, 144, 226, 0.4),
+    inset 0 1px 2px rgba(255, 255, 255, 0.3);
+  background: linear-gradient(145deg, #5ba0f2, #4080cd);
+}
+
+.btn:hover::before {
+  left: 100%;
+}
+
+.btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(74, 144, 226, 0.4),
+    inset 0 1px 2px rgba(255, 255, 255, 0.2);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  background: linear-gradient(145deg, #95a5a6, #7f8c8d);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.btn:disabled:hover {
+  transform: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.btn:disabled::before {
+  display: none;
+}
+
+/* 버튼 아이콘 추가 가능 */
+.btn.new-game::before {
+  content: "🎲 ";
+}
+
+.btn.undo::before {
+  content: "↶ ";
+}
+
+.btn.hint::before {
+  content: "💡 ";
+}
+
+/* 모달 스타일 개선 */
+.game-complete-modal,
+.stats-modal,
+.settings-modal,
+.rules-modal {
+  backdrop-filter: blur(8px);
+}
+
+.game-complete-modal > div,
+.stats-modal > div,
+.settings-modal > div,
+.rules-modal > div {
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3),
+    inset 0 1px 2px rgba(255, 255, 255, 0.1);
+}
+
+/* 일시정지 오버레이 개선 */
+#pauseOverlay {
+  backdrop-filter: blur(5px);
+  background: rgba(0, 0, 0, 0.7) !important;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 반응형 디자인 개선 */
+@media (max-width: 1200px) {
+  body {
+    padding: 10px;
+  }
+
+  #gameContainer {
+    max-width: 100%;
+    max-height: 100vh;
+    border-width: 3px;
+  }
+
+  .ui-overlay {
+    top: 10px;
+    left: 10px;
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+
+  .controls {
+    top: 10px;
+    right: 10px;
+    gap: 6px;
+  }
+}
+
+@media (max-width: 768px) {
+  .ui-overlay {
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+
+  .ui-overlay span {
+    font-size: 14px;
+  }
+
+  .btn {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .controls {
+    top: 5px;
+    right: 5px;
+    gap: 4px;
+    flex-direction: column;
+  }
+}
+
+/* 추가 시각적 효과 */
+@keyframes glow {
+  0%,
+  100% {
+    box-shadow: 0 4px 12px rgba(74, 144, 226, 0.3),
+      inset 0 1px 2px rgba(255, 255, 255, 0.2);
+  }
+  50% {
+    box-shadow: 0 4px 20px rgba(74, 144, 226, 0.5),
+      inset 0 1px 2px rgba(255, 255, 255, 0.3);
+  }
+}
+
+.btn.hint:not(:disabled) {
+  animation: glow 2s ease-in-out infinite;
+}
